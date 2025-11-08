@@ -1,0 +1,6 @@
+{
+  "dependencies": ["./noon-agent"],
+  "graphs": {
+    "noon-agent": "noon_agent.main:graph"
+  }
+}
