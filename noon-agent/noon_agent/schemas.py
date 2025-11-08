@@ -13,10 +13,3 @@ class AgentState(TypedDict):
 
     messages: Annotated[List[BaseMessage], add_messages]
     context: Dict[str, Any]
-
-
-class TaskInput(TypedDict):
-    """Payload expected when invoking the agent."""
-
-    query: str
-    context: Dict[str, Any]

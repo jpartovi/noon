@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Literal
 
+from datetime import datetime 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.tools import StructuredTool
@@ -11,92 +12,80 @@ from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 
-from .config import AgentSettings, get_settings
-from .helpers import build_context_block, build_prompt
-from .mocks import clock_tool, ping_tool
+# from .config import AgentSettings, get_settings
+# from .helpers import build_context_block, build_prompt
+# from .mocks import clock_tool, ping_tool
 from .schemas import AgentState, TaskInput
 
+class State(TypedDict):
+    something: str
+    action: Literal["create", "delete", "update", "read"]
+    start_time: datetime
+    end_time: datetime
+    auth: dict 
+    """any params relevant for auth when making google calendar api calls"""
 
-def _make_model(settings: AgentSettings) -> BaseChatModel:
-    """Lazy construct the model with the project's defaults."""
+class OutputState(TypedDict):
+    summary: dict
 
-    if not settings.openai_api_key:
-        raise ValueError("OPENAI_API_KEY is not configured")
-
-    return ChatOpenAI(
-        model=settings.model,
-        temperature=settings.temperature,
-        max_retries=settings.max_retries,
-        api_key=settings.openai_api_key,
-    )
-
-
-def _route_after_agent(state: AgentState) -> str:
-    """Decide whether to call a tool or finish the run."""
-
-    messages: List[BaseMessage] = state["messages"]
-    if not messages:
-        return END
-
-    last = messages[-1]
-    if isinstance(last, AIMessage) and last.tool_calls:
-        return "tools"
-    return END
+def route_action(state: State):
+    if state["action"] == "create":
+        return create_event(state)
+    elif state["action"] == "read":
+        return read_event(state)
+    elif state["update"] == "update":
+        return update_event(state)
+    else:
+        return delete_event(state)
 
 
-def build_agent_graph(settings: AgentSettings | None = None, llm: BaseChatModel | None = None):
-    """Create and compile the LangGraph agent."""
-
-    resolved_settings = settings or get_settings()
-    active_llm = llm or _make_model(resolved_settings)
-
-    tools = [
-        StructuredTool.from_function(ping_tool, name="ping", description="Health-check tool."),
-        StructuredTool.from_function(
-            clock_tool, name="clock", description="Return the current UTC timestamp."
-        ),
-    ]
-    tool_node = ToolNode(tools=tools)
-
-    prompt = build_prompt()
-    chain = prompt | active_llm.bind(tools=tools)
-
-    def agent_node(state: AgentState) -> Dict[str, List[BaseMessage]]:
-        response = chain.invoke({"messages": state["messages"]})
-        return {"messages": [response]}
-
-    graph = StateGraph(AgentState)
-    graph.add_node("agent", agent_node)
-    graph.add_node("tools", tool_node)
-    graph.add_edge(START, "agent")
-    graph.add_conditional_edges(
-        "agent",
-        _route_after_agent,
-        {
-            "tools": "tools",
-            END: END,
-        },
-    )
-    graph.add_edge("tools", "agent")
-
-    return graph.compile()
+def create_event(state: State):
+    #todo
+    pass
 
 
-def _format_initial_state(payload: TaskInput) -> AgentState:
-    context = payload.get("context") or {}
-    query = payload.get("query", "").strip()
-    if not query:
-        raise ValueError("A query is required to run the agent.")
+def read_event(state: State):
+    pass
 
-    context_block = build_context_block(context)
-    composed_prompt = f"{query}\n\n{context_block}"
-    return AgentState(messages=[HumanMessage(content=composed_prompt)], context=context)
+def update_event(state: State):
+    pass
+
+def delete_event(state: State):
+    pass
+
+graph_builder = StateGraph(State, output_schema=OutputState)
+graph_builder.add_conditional_edges(
+    START, route_action, ["list off poss actions"]
+)
+graph_builder.add_node(..)
+graoh_builder.add_node(..., END)
+graph = graph_builder.compile(name="NOON")
 
 
-def invoke_agent(
-    payload: TaskInput, settings: AgentSettings | None = None, llm: BaseChatModel | None = None
-) -> Any:
-    """Convenience helper to invoke the compiled graph."""
 
-    graph = build_agent_graph(settings=settings, llm=llm)
-    return graph.invoke(_format_initial_state(payload))
+
+# other ideas
+# • - search_free_time – scan attendee calendars for the
+#     earliest mutually available windows.
+#   - propose_slots – generate a ranked shortlist
+#     of candidate start/end times (with time‑zone
+#     normalization).
+#   - adjust_event – move an existing event by
+#     ±N minutes/hours while keeping participant
+#     constraints intact.
+#   - sync_external – pull in events from external
+#     sources (invites, shared calendars) and reconcile
+#     duplicates.
+#   - notify_attendees – draft/send updates or reminders
+#     when an event is created, moved, or canceled.
+#   - summarize_day – return a natural-language rundown
+#     of the user’s schedule, conflicts, and gaps.
+#   - set_preferences – store user defaults (meeting
+#     lengths, working hours, buffer rules) for
+#     downstream actions.
+#   - resolve_conflict – pick which overlapping event
+#     to keep, reschedule, or decline based on priority
+#     rules.
+#   - collect_requirements – gather missing metadata
+#     (agenda, location, video link) before finalizing
+#     an event.
