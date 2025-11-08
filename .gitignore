@@ -9,3 +9,5 @@ __pycache__/
 noon-agent/.venv/
 noon-agent/.pytest_cache/
 noon-agent/noon_agent.egg-info/
+*credentials.json
+*token.json

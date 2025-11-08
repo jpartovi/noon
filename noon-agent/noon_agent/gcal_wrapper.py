@@ -38,7 +38,9 @@ def get_calendar_service(
             creds.refresh(Request())
         else:
             flow = InstalledAppFlow.from_client_secrets_file(credentials_path, SCOPES)
-            creds = flow.run_local_server(port=0)
+            # Use port 8000 - make sure this is configured in Google Cloud Console
+            # as http://localhost:8000/ in Authorized redirect URIs
+            creds = flow.run_local_server(port=8000, open_browser=True)
 
         # Save credentials for next run
         with open(token_path, "w") as token:
