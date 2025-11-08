@@ -11,3 +11,5 @@ noon-agent/.pytest_cache/
 noon-agent/noon_agent.egg-info/
 *credentials.json
 *token.json
+noon-backend/*.ipynb
+noon-backend/.ipynb_checkpoints/
