@@ -1,27 +1,27 @@
-"""LangGraph agent package for the Noon project."""
+"""Simple Google Calendar agent for the Noon project."""
 
-from .calendar_graph import build_calendar_graph, invoke_calendar_agent
-from .calendar_state import CalendarAgentState, UserContext
-from .config import AgentSettings, get_settings
-from .gcal_auth import get_calendar_service, get_calendar_service_from_file
-
-# Legacy exports for backwards compatibility
-from .main import build_agent_graph, invoke_agent
-from .schemas import AgentState
+from .gcal_wrapper import (
+    get_calendar_service,
+    create_calendar_event,
+    read_calendar_events,
+    search_calendar_events,
+    update_calendar_event,
+    delete_calendar_event,
+)
+from .main import State, OutputState, build_agent_graph, invoke_agent
 
 __all__ = [
-    # Calendar agent (new)
-    "build_calendar_graph",
-    "invoke_calendar_agent",
-    "CalendarAgentState",
-    "UserContext",
+    # Calendar service
     "get_calendar_service",
-    "get_calendar_service_from_file",
-    # Settings
-    "AgentSettings",
-    "get_settings",
-    # Legacy (old)
+    # Calendar operations
+    "create_calendar_event",
+    "read_calendar_events",
+    "search_calendar_events",
+    "update_calendar_event",
+    "delete_calendar_event",
+    # Agent graph
     "build_agent_graph",
     "invoke_agent",
-    "AgentState",
+    "State",
+    "OutputState",
 ]
