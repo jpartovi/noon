@@ -1,0 +1,10 @@
+{
+  "graphs": [
+    {
+      "name": "noon-agent",
+      "path": "noon_agent/main.py",
+      "build": "noon_agent.main:build_agent_graph",
+      "description": "Default Noon LangGraph agent."
+    }
+  ]
+}
