@@ -2,64 +2,131 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal
+from datetime import datetime
+from typing import Any, Dict, List, Literal, TypedDict
 
-from datetime import datetime 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
-from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.tools import StructuredTool
-from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
-from langgraph.prebuilt import ToolNode
+from langchain_core.runnables import Runnable
 
-# from .config import AgentSettings, get_settings
-# from .helpers import build_context_block, build_prompt
-# from .mocks import clock_tool, ping_tool
-from .schemas import AgentState, TaskInput
+from .helpers import build_intent_parser
 
-class State(TypedDict):
-    something: str
+
+class State(TypedDict, total=False):
+    """Internal state propagated between graph nodes."""
+
+    messages: str | List[Dict[str, Any]]
+    context: Dict[str, Any]
     action: Literal["create", "delete", "update", "read"]
-    start_time: datetime
-    end_time: datetime
-    auth: dict 
-    """any params relevant for auth when making google calendar api calls"""
+    start_time: datetime | None
+    end_time: datetime | None
+    location: str | None
+    people: List[str] | None
+    name: str | None
+    auth: Dict[str, Any]
+    summary: str
+    response: str
+    success: bool
+
 
 class OutputState(TypedDict):
-    summary: dict
+    response: str
+    success: bool
 
-def route_action(state: State):
-    if state["action"] == "create":
-        return create_event(state)
-    elif state["action"] == "read":
-        return read_event(state)
-    elif state["update"] == "update":
-        return update_event(state)
+
+def route_action(state: State) -> str:
+    """Select the next node based on requested action; default to read."""
+
+    return state.get("action", "read")
+
+
+intent_chain: Runnable = build_intent_parser()
+
+
+def parse_intent(state: State) -> State:
+    """Call the LLM to normalize the user's scheduling intent."""
+
+    raw_messages = state.get("messages") or ""
+    if isinstance(raw_messages, str):
+        normalized_messages: List[Dict[str, Any]] = [{"role": "human", "content": raw_messages}]
     else:
-        return delete_event(state)
+        normalized_messages = raw_messages
+
+    parsed = intent_chain.invoke({"messages": normalized_messages})
+    next_state = dict(state)
+    next_state.update(parsed.model_dump())
+    return next_state
 
 
-def create_event(state: State):
-    #todo
-    pass
+def _with_summary(state: State, message: str) -> State:
+    next_state = dict(state)
+    next_state["summary"] = message
+    return next_state
 
 
-def read_event(state: State):
-    pass
+def create_event(state: State) -> State:
+    return _with_summary(state, "Created event (placeholder).")
 
-def update_event(state: State):
-    pass
 
-def delete_event(state: State):
-    pass
+def read_event(state: State) -> State:
+    return _with_summary(state, "Fetched event details (placeholder).")
+
+
+def update_event(state: State) -> State:
+    return _with_summary(state, "Updated event (placeholder).")
+
+
+def delete_event(state: State) -> State:
+    return _with_summary(state, "Deleted event (placeholder).")
+
+
+def summarize_result(state: State) -> OutputState:
+    """Return a user-facing description of what the graph just did."""
+
+    summary = state.get("summary") or "No additional details were provided."
+    action = state.get("action", "read")
+    result = f"{action.capitalize()} action completed: {summary}"
+    return {"response": result, "success": True}
+
 
 graph_builder = StateGraph(State, output_schema=OutputState)
+graph_builder.add_node("parse_intent", parse_intent)
+graph_builder.add_node("create", create_event)
+graph_builder.add_node("read", read_event)
+graph_builder.add_node("update", update_event)
+graph_builder.add_node("delete", delete_event)
+graph_builder.add_node("summarize_result", summarize_result)
+
+graph_builder.add_edge(START, "parse_intent")
 graph_builder.add_conditional_edges(
-    START, route_action, ["list off poss actions"]
+    "parse_intent",
+    route_action,
+    {
+        "create": "create",
+        "read": "read",
+        "update": "update",
+        "delete": "delete",
+    },
 )
-graph_builder.add_node(..)
-graoh_builder.add_node(..., END)
-graph = graph_builder.compile(name="NOON")
+
+for action in ("create", "read", "update", "delete"):
+    graph_builder.add_edge(action, "summarize_result")
+
+graph_builder.add_edge("summarize_result", END)
+
+graph = graph_builder.compile(name="noon-agent")
+
+
+def build_agent_graph() -> StateGraph:
+    """Return the compiled graph for compatibility with earlier imports."""
+
+    return graph
+
+
+def invoke_agent(state: State) -> OutputState:
+    """Convenience helper that runs the compiled graph."""
+
+    result = graph.invoke(state)
+    return {"summary": result.get("summary", "")}
 
 
 
