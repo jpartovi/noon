@@ -2,64 +2,88 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal
+from datetime import datetime
+from typing import Any, Dict, Literal, TypedDict
 
-from datetime import datetime 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
-from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.tools import StructuredTool
-from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
-from langgraph.prebuilt import ToolNode
 
-# from .config import AgentSettings, get_settings
-# from .helpers import build_context_block, build_prompt
-# from .mocks import clock_tool, ping_tool
-from .schemas import AgentState, TaskInput
 
-class State(TypedDict):
-    something: str
+class State(TypedDict, total=False):
+    """Internal state propagated between graph nodes."""
+
     action: Literal["create", "delete", "update", "read"]
-    start_time: datetime
-    end_time: datetime
-    auth: dict 
-    """any params relevant for auth when making google calendar api calls"""
+    start_time: datetime | None
+    end_time: datetime | None
+    auth: Dict[str, Any]
+    summary: str
+
 
 class OutputState(TypedDict):
-    summary: dict
-
-def route_action(state: State):
-    if state["action"] == "create":
-        return create_event(state)
-    elif state["action"] == "read":
-        return read_event(state)
-    elif state["update"] == "update":
-        return update_event(state)
-    else:
-        return delete_event(state)
+    summary: str
 
 
-def create_event(state: State):
-    #todo
-    pass
+def route_action(state: State) -> str:
+    """Select the next node based on requested action; default to read."""
+
+    return state.get("action", "read")
 
 
-def read_event(state: State):
-    pass
+def _with_summary(state: State, message: str) -> State:
+    next_state = dict(state)
+    next_state["summary"] = message
+    return next_state
 
-def update_event(state: State):
-    pass
 
-def delete_event(state: State):
-    pass
+def create_event(state: State) -> State:
+    return _with_summary(state, "Created event (placeholder).")
+
+
+def read_event(state: State) -> State:
+    return _with_summary(state, "Fetched event details (placeholder).")
+
+
+def update_event(state: State) -> State:
+    return _with_summary(state, "Updated event (placeholder).")
+
+
+def delete_event(state: State) -> State:
+    return _with_summary(state, "Deleted event (placeholder).")
+
 
 graph_builder = StateGraph(State, output_schema=OutputState)
+graph_builder.add_node("create", create_event)
+graph_builder.add_node("read", read_event)
+graph_builder.add_node("update", update_event)
+graph_builder.add_node("delete", delete_event)
+
 graph_builder.add_conditional_edges(
-    START, route_action, ["list off poss actions"]
+    START,
+    route_action,
+    {
+        "create": "create",
+        "read": "read",
+        "update": "update",
+        "delete": "delete",
+    },
 )
-graph_builder.add_node(..)
-graoh_builder.add_node(..., END)
-graph = graph_builder.compile(name="NOON")
+
+for action in ("create", "read", "update", "delete"):
+    graph_builder.add_edge(action, END)
+
+graph = graph_builder.compile(name="noon-agent")
+
+
+def build_agent_graph() -> StateGraph:
+    """Return the compiled graph for compatibility with earlier imports."""
+
+    return graph
+
+
+def invoke_agent(state: State) -> OutputState:
+    """Convenience helper that runs the compiled graph."""
+
+    result = graph.invoke(state)
+    return {"summary": result.get("summary", "")}
 
 
 
