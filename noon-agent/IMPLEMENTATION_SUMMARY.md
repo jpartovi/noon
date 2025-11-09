@@ -181,53 +181,37 @@ Understands natural expressions:
 
 ### Basic Invocation
 ```python
-from datetime import datetime
-from noon_agent import invoke_calendar_agent
+from noon_agent import invoke_agent
 
-result = invoke_calendar_agent(
-    user_input="Schedule a meeting with Alice tomorrow at 2pm",
-    user_context={
-        "user_id": "user123",
+payload = {
+    "query": "Schedule a meeting with Alice tomorrow at 2pm",
+    "auth_token": "ya29....",
+    "calendar_id": "primary",
+    "context": {
         "timezone": "America/Los_Angeles",
-        "primary_calendar_id": "primary",
-        "all_calendar_ids": ["primary", "personal@gmail.com"],
-        "friends": [
-            {
-                "name": "Alice Johnson",
-                "email": "alice@example.com",
-                "calendar_id": "alice@example.com"
-            }
-        ],
-        "upcoming_events": [],
-        "access_token": "ya29...."
+        "friends": [{"name": "Alice Johnson", "email": "alice@example.com"}],
     },
-    current_time=datetime.now()
-)
+}
 
-print(result["response"])
+result = invoke_agent(payload)
+print(result)
+# -> {"tool": "create", "id": "...", "calendar": "primary", ...}
 ```
+
+> **Breaking change:** the old `{messages: [...]}` input and `{response, success, action}` output have been removed. All callers must adopt the `{"query": "..."}` contract and handle the tool payload union above.
 
 ### Production API Example
 ```python
-from fastapi import FastAPI, Header
-from noon_agent import invoke_calendar_agent, get_calendar_service
+from fastapi import FastAPI, Request
+from noon_agent import invoke_agent
 
 app = FastAPI()
 
-@app.post("/calendar/invoke")
-async def invoke(data: dict, authorization: str = Header(...)):
-    access_token = authorization.replace("Bearer ", "")
-
-    service = get_calendar_service(access_token)
-    user_context = load_user_context(service, data["user_id"])
-    user_context["access_token"] = access_token
-
-    result = invoke_calendar_agent(
-        user_input=data["input"],
-        user_context=user_context
-    )
-
-    return {"response": result["response"]}
+@app.post("/calendar/agent")
+async def invoke(request: Request):
+    payload = await request.json()
+    # enforce {"query": "..."} at minimum in request validation
+    return invoke_agent(payload)
 ```
 
 ## 🧪 Testing

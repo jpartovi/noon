@@ -28,7 +28,7 @@ def test_create_event_uses_context_defaults(monkeypatch):
         return {"status": "success"}
 
     monkeypatch.setattr(
-        "noon_agent.calendar_service.create_calendar_event", fake_create_calendar_event
+        "services.calendar_client.service.create_calendar_event", fake_create_calendar_event
     )
 
     factory, captured = _stub_service_factory("token-123")
@@ -59,7 +59,7 @@ def test_read_events_defaults_to_primary(monkeypatch):
         return {"status": "success", "count": 0, "events": []}
 
     monkeypatch.setattr(
-        "noon_agent.calendar_service.read_calendar_events", fake_read_calendar_events
+        "services.calendar_client.service.read_calendar_events", fake_read_calendar_events
     )
 
     service = CalendarService(service_factory=lambda _: object())
@@ -88,3 +88,34 @@ def test_get_schedule_requires_date_range():
 
     with pytest.raises(CalendarServiceError):
         service.get_schedule(auth_token="abc", start_time=None, end_time=None)
+
+
+def test_build_service_falls_back_to_token_file(monkeypatch):
+    fallback_service = object()
+    captured: Dict[str, Any] = {}
+
+    monkeypatch.setattr(
+        "services.calendar_client.service.get_calendar_service_from_file",
+        lambda cred, token: fallback_service,
+    )
+
+    def fake_read_calendar_events(service, **kwargs):
+        captured["service"] = service
+        return {"status": "success", "count": 0, "events": []}
+
+    monkeypatch.setattr(
+        "services.calendar_client.service.read_calendar_events", fake_read_calendar_events
+    )
+
+    def token_factory(_token):
+        raise AssertionError("token factory should not be called when using token file fallback")
+
+    service = CalendarService(
+        service_factory=token_factory,
+        use_token_file=True,
+        credentials_path="credentials.json",
+        token_path="token.json",
+    )
+
+    service.read_events(auth_token=None, time_min=datetime.now(timezone.utc))
+    assert captured["service"] is fallback_service

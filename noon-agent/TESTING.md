@@ -8,7 +8,7 @@ guidance on how to run and extend them.
 - **Unit tests (`tests/unit_tests/`)**  
   Fast tests that exercise individual modules in isolation. Examples include:
   - `test_intent_parser.py` – validates the LLM intent parser’s schema handling.
-  - `test_graph.py` – smoke tests core LangGraph wiring.
+  - `test_graph.py` – verifies the single-endpoint LangGraph emits the five tool payloads.
   - `test_calendar_service.py` – validates the new calendar service abstraction (see below).
 
 - **Integration tests (`tests/integration_tests/`)**  

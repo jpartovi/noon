@@ -20,6 +20,23 @@ A LangGraph-based intelligent calendar agent with Google Calendar integration, m
 - **LLM-Based Intent Classification**: Natural language understanding via GPT-4
 - **Timezone Support**: Handles user timezones correctly
 
+## Single Endpoint Contract (Breaking Change)
+
+The helper now exposes one JSON endpoint. Send a payload with a `query` string (plus optional
+`auth_token`, `calendar_id`, and `context`) and you'll receive a discriminated union response.
+The legacy `{messages: [...]}` and `{response, success, action}` shapes have been removed.
+
+| Tool            | Purpose                  | Shape (examples)                                                                 |
+|-----------------|--------------------------|----------------------------------------------------------------------------------|
+| `show`          | Display a specific event | `{ "tool": "show", "id": "evt_123", "calendar": "primary" }`                     |
+| `show-schedule` | Display a date range     | `{ "tool": "show-schedule", "start_day": "2024-09-01", "end_day": "2024-09-07" }`|
+| `create`        | Confirm event creation   | `{ "tool": "create", "summary": "...", "start_time": "...", ... }`               |
+| `update`        | Describe applied edits   | `{ "tool": "update", "id": "evt_123", "changes": { "summary": "New title" } }`   |
+| `delete`        | Confirm deletion         | `{ "tool": "delete", "id": "evt_123", "calendar": "primary" }`                   |
+
+Each response may include additional contextual fields (e.g., attendees, metadata, match lists) but
+the `tool` literal and core identifiers above are always present.
+
 ## Architecture
 
 ### Two-Layer Design
@@ -120,32 +137,18 @@ A `token.json` file will be created for future use.
 ### Basic Example
 
 ```python
-from datetime import datetime
-from noon_agent import invoke_calendar_agent
-from noon_agent.tools.context_tools import load_user_context
-from noon_agent.gcal_auth import get_calendar_service_from_file
+from noon_agent import invoke_agent
 
-# Get calendar service
-service = get_calendar_service_from_file()
+payload = {
+    "query": "Schedule a meeting with Alice tomorrow at 2pm",
+    "auth_token": "ya29....",
+    "calendar_id": "primary",
+    "context": {"timezone": "America/Los_Angeles"},
+}
 
-# Load user context
-user_context = load_user_context(
-    service=service,
-    user_id="user123",
-    timezone="America/Los_Angeles"
-)
-
-# Note: In production, access_token comes from your API request
-user_context["access_token"] = "your-token-here"
-
-# Invoke the agent
-result = invoke_calendar_agent(
-    user_input="Schedule a meeting with Alice tomorrow at 2pm",
-    user_context=user_context,
-    current_time=datetime.now()
-)
-
-print(result["response"])
+result = invoke_agent(payload)
+if result["tool"] == "create":
+    print(f"Created event {result['id']} on {result['calendar']}")
 ```
 
 ### Production API Integration
@@ -153,40 +156,17 @@ print(result["response"])
 In a production API (FastAPI, Flask, etc.), you'd use this pattern:
 
 ```python
-from fastapi import FastAPI, Request, Header
-from noon_agent import invoke_calendar_agent
-from noon_agent import get_calendar_service
-from noon_agent.tools.context_tools import load_user_context
+from fastapi import FastAPI, Request
+from noon_agent import invoke_agent
 
 app = FastAPI()
 
-@app.post("/calendar/invoke")
-async def invoke(request: Request, authorization: str = Header(...)):
-    # Extract access token from Authorization header
-    access_token = authorization.replace("Bearer ", "")
-
-    # Get user input
-    data = await request.json()
-    user_input = data["input"]
-
-    # Create service from token
-    service = get_calendar_service(access_token)
-
-    # Load user context (from database in production)
-    user_context = load_user_context(
-        service=service,
-        user_id=data["user_id"],
-        timezone=data.get("timezone", "UTC")
-    )
-    user_context["access_token"] = access_token
-
-    # Invoke agent
-    result = invoke_calendar_agent(
-        user_input=user_input,
-        user_context=user_context
-    )
-
-    return {"response": result["response"]}
+@app.post("/calendar/agent")
+async def run_agent(request: Request):
+    body = await request.json()
+    # Body must at least contain {"query": "..."}
+    result = invoke_agent(body)
+    return result
 ```
 
 ## Example Queries
@@ -239,11 +219,7 @@ The agent automatically overlays all your calendars to provide accurate availabi
 # 2. Merges all busy periods
 # 3. Returns only truly free slots
 
-result = invoke_calendar_agent(
-    user_input="When am I free tomorrow?",
-    user_context=user_context
-)
-
+result = invoke_agent({"query": "When am I free tomorrow?", "auth_token": "ya29..."})
 # Result considers events from ALL calendars
 ```
 
@@ -333,7 +309,7 @@ noon_agent/
 │   ├── gcal_tools.py          # High-level multi-calendar tools
 │   ├── friend_tools.py        # Friend resolution
 │   └── context_tools.py       # Context management
-└── main.py                     # Legacy agent (deprecated)
+└── main.py                     # Single-endpoint LangGraph entrypoint
 ```
 
 ## Key Concepts

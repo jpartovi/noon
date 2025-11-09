@@ -9,7 +9,8 @@ from .gcal_wrapper import (
     update_calendar_event,
     delete_calendar_event,
 )
-from .main import State, OutputState, build_agent_graph, invoke_agent
+from .main import State, build_agent_graph, invoke_agent
+from .schemas import AgentQuery, AgentResponse
 
 __all__ = [
     # Calendar abstraction
@@ -27,5 +28,6 @@ __all__ = [
     "build_agent_graph",
     "invoke_agent",
     "State",
-    "OutputState",
+    "AgentQuery",
+    "AgentResponse",
 ]
