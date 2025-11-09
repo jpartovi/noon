@@ -27,6 +27,9 @@ class Settings(BaseSettings):
         "https://www.googleapis.com/auth/calendar.readonly",
     ]
 
+    # LangGraph Agent configuration
+    langgraph_agent_url: str
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
