@@ -7,4 +7,3 @@ from google_calendar.utils import google_oauth as _google_oauth
 google_oauth = _google_oauth
 
 __all__ = ["supabase_client", "google_oauth"]
-

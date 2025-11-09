@@ -115,4 +115,3 @@ __all__ = [
     "UpdateEventResponse",
     "UpdateEventMetadata",
 ]
-

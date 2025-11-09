@@ -157,7 +157,9 @@ async def refresh_access_token(refresh_token: str) -> GoogleTokens:
     data = response.json()
     access_token = data.get("access_token")
     if not access_token:
-        raise GoogleOAuthError("Token refresh response did not include an access token.")
+        raise GoogleOAuthError(
+            "Token refresh response did not include an access token."
+        )
 
     return GoogleTokens(
         access_token=access_token,

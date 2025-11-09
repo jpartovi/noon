@@ -15,4 +15,3 @@ __all__ = [
     "GoogleCalendarEventNotFoundError",
     "google_calendar_service",
 ]
-

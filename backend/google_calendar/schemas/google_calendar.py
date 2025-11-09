@@ -61,4 +61,3 @@ class ScheduleResponse(BaseModel):
 class EventSurroundingScheduleResponse(BaseModel):
     event: EventDetail
     schedule: ScheduleResponse
-
