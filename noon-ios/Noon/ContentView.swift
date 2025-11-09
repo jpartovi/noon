@@ -41,15 +41,20 @@ struct ContentView: View {
             .navigationTitle("Noon")
             .toolbar {
                 if viewModel.phase == .authenticated {
-                    ToolbarItem(placement: .navigationBarLeading) {
-                        Button("Sign Out") {
-                            viewModel.signOut()
-                        }
-                        .foregroundStyle(ColorPalette.Text.primary)
-                    }
                     ToolbarItem(placement: .navigationBarTrailing) {
-                        Button {
-                            navigationPath.append(Destination.calendars)
+                        Menu {
+                            Button("Calendar Accounts") {
+                                navigationPath.append(Destination.calendars)
+                            }
+                            Button("Friends") {
+                                // Coming soon
+                            }
+                            Divider()
+                            Button(role: .destructive) {
+                                viewModel.signOut()
+                            } label: {
+                                Text("Sign Out")
+                            }
                         } label: {
                             Image(systemName: "line.3.horizontal")
                                 .imageScale(.large)
