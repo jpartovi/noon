@@ -1,6 +1,8 @@
 {
-  "dependencies": ["./noon-agent"],
+  "dependencies": ["./agent"],
   "graphs": {
-    "noon-agent": "noon_agent.main:graph"
-  }
+    "agent": "./agent/main.py:noon_graph"
+  },
+  "env": ".env",
+  "image_distro": "wolfi"
 }
