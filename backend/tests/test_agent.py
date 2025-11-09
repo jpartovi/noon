@@ -15,7 +15,7 @@ class TestAgentAction:
         mock_get_current_user,
         mock_list_google_accounts,
         mock_transcription_service,
-        mock_langgraph_client,
+        mock_agent_graph,
     ):
         """Test successful agent invocation with audio file."""
         # Arrange
@@ -38,12 +38,11 @@ class TestAgentAction:
         # Verify transcription was called
         mock_transcription_service.assert_called_once()
 
-        # Verify LangGraph client was called
-        mock_langgraph_client.runs.wait.assert_called_once()
-        call_kwargs = mock_langgraph_client.runs.wait.call_args.kwargs
-        assert call_kwargs["assistant_id"] == "agent"
-        assert "query" in call_kwargs["input"]
-        assert "auth" in call_kwargs["input"]
+        # Verify agent graph was invoked
+        mock_agent_graph.assert_called_once()
+        call_args = mock_agent_graph.call_args[0][0]  # Get first positional arg (input_state)
+        assert "query" in call_args
+        assert "auth" in call_args
 
     def test_agent_action_no_google_account(
         self,

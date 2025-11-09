@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import os
 
 # Set required env vars for tests
-os.environ.setdefault("LANGGRAPH_AGENT_URL", "https://noon-test.langgraph.app")
 os.environ.setdefault("SUPABASE_URL", "https://test.supabase.co")
 os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "test-key")
 
@@ -94,22 +93,16 @@ def mock_transcription_service():
 
 
 @pytest.fixture
-def mock_langgraph_client():
-    """Mock LangGraph SDK client."""
-    with patch("agent.routes.agent.get_client") as mock_get_client:
-        mock_client = MagicMock()
-        mock_runs = MagicMock()
-
-        # Mock wait method to return agent response
-        async def mock_wait(*args, **kwargs):
+def mock_agent_graph():
+    """Mock agent graph invocation."""
+    with patch("agent.routes.agent.noon_graph.invoke") as mock_invoke:
+        # Mock invoke method to return agent response
+        def mock_invoke_fn(input_state):
             return {
                 "success": True,
                 "request": "show-schedule",
                 "metadata": {"start-date": "2024-11-16", "end-date": "2024-11-17"},
             }
 
-        mock_runs.wait = AsyncMock(side_effect=mock_wait)
-        mock_client.runs = mock_runs
-        mock_get_client.return_value = mock_client
-
-        yield mock_client
+        mock_invoke.side_effect = mock_invoke_fn
+        yield mock_invoke

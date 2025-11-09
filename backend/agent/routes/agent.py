@@ -1,14 +1,22 @@
 """Agent endpoint for invoking the LangGraph calendar agent."""
 
+import asyncio
 import logging
+import sys
+from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
-from langgraph_sdk import get_client
 
 from schemas.user import AuthenticatedUser
 from dependencies import get_current_user
 from services import supabase_client
-from config import get_settings
 from v2nl import TranscriptionService
+
+# Add agent directory to Python path for direct import
+agent_dir = Path(__file__).parent.parent.parent.parent / "agent"
+if str(agent_dir) not in sys.path:
+    sys.path.insert(0, str(agent_dir))
+
+from main import noon_graph
 
 logger = logging.getLogger(__name__)
 
@@ -84,10 +92,7 @@ async def agent_action(
 
         logger.info(f"Transcription completed: {transcribed_text[:100]}...")
 
-        # Create LangGraph SDK client and invoke agent
-        settings = get_settings()
-        client = get_client(url=settings.langgraph_agent_url)
-
+        # Prepare input state for agent
         input_state = {
             "query": transcribed_text,
             "auth": auth,
@@ -100,12 +105,8 @@ async def agent_action(
             f"Invoking agent for user {current_user.id} with transcribed query: {transcribed_text[:50]}..."
         )
 
-        # Invoke and wait for completion
-        result = await client.runs.wait(
-            thread_id=None,
-            assistant_id="agent",
-            input=input_state,
-        )
+        # Invoke agent graph directly (run in thread pool to avoid blocking)
+        result = await asyncio.to_thread(noon_graph.invoke, input_state)
 
         logger.info(
             f"Agent completed. Request: {result.get('request')}, Success: {result.get('success')}"
