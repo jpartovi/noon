@@ -20,16 +20,26 @@ final class AgentViewModel: ObservableObject {
 
     @Published private(set) var displayState: DisplayState = .idle
     @Published private(set) var isRecording: Bool = false
+    @Published private(set) var scheduleDate: Date
+    @Published private(set) var displayEvents: [DisplayEvent]
 
     private let recorder: AgentAudioRecorder
     private let service: AgentActionServicing
+    private let showScheduleHandler: ShowScheduleActionHandling
 
     init(
         recorder: AgentAudioRecorder? = nil,
-        service: AgentActionServicing? = nil
+        service: AgentActionServicing? = nil,
+        showScheduleHandler: ShowScheduleActionHandling? = nil,
+        initialScheduleDate: Date = Date(),
+        initialDisplayEvents: [DisplayEvent]? = nil
     ) {
         self.recorder = recorder ?? AgentAudioRecorder()
         self.service = service ?? AgentActionService()
+        self.showScheduleHandler = showScheduleHandler ?? ShowScheduleActionHandler()
+        self.scheduleDate = Calendar.autoupdatingCurrent.startOfDay(for: initialScheduleDate)
+        self.displayEvents = initialDisplayEvents
+            ?? ScheduleDisplayHelper.getDisplayEvents(for: initialScheduleDate)
     }
 
     func startRecording() {
@@ -73,6 +83,9 @@ final class AgentViewModel: ObservableObject {
                 print("[Agent] Uploading audio to /agent/action…")
 
                 let result = try await service.performAgentAction(fileURL: recording.fileURL, accessToken: token)
+
+                try await handle(agentResponse: result.agentResponse, accessToken: token)
+
                 displayState = .completed(result: result)
 
                 if let responseString = result.responseString {
@@ -116,8 +129,21 @@ final class AgentViewModel: ObservableObject {
             }
         case let error as ServerError:
             return "Transcription failed (\(error.statusCode)): \(error.message)"
+        case let error as GoogleCalendarScheduleServiceError:
+            return error.localizedDescription ?? "Unable to load your Google Calendar schedule."
         default:
             return "Something went wrong: \(error.localizedDescription)"
+        }
+    }
+
+    private func handle(agentResponse: AgentResponse, accessToken: String) async throws {
+        switch agentResponse {
+        case .showSchedule(let response):
+            let result = try await showScheduleHandler.handle(response: response, accessToken: accessToken)
+            scheduleDate = result.startDate
+            displayEvents = result.displayEvents
+        default:
+            break
         }
     }
 }

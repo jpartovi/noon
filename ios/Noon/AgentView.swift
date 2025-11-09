@@ -15,21 +15,14 @@ struct AgentView: View {
     @State private var isLoading = false
 
     var body: some View {
-        let referenceDate = Date()
-        let displayEvents = ScheduleDisplayHelper.getDisplayEvents(
-            for: referenceDate,
-            highlightEventID: "mock-event-lunch",
-            destructiveEventID: "mock-event-product-review"
-        )
-
         return ZStack {
             ColorPalette.Gradients.backgroundBase
                 .ignoresSafeArea()
 
             VStack(spacing: 24) {
                 ScheduleView(
-                    date: referenceDate,
-                    events: displayEvents
+                    date: viewModel.scheduleDate,
+                    events: viewModel.displayEvents
                 )
                     .padding(.horizontal, 24)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
