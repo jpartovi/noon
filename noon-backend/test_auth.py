@@ -8,14 +8,32 @@ import os
 import sys
 from pathlib import Path
 
+import pytest
+
 # Add parent directory to path to import config
 sys.path.insert(0, str(Path(__file__).parent))
+
+REQUIRED_ENV_VARS = [
+    "SUPABASE_URL",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET",
+    "GOOGLE_OAUTH_REDIRECT_URI",
+    "GOOGLE_OAUTH_APP_REDIRECT_URI",
+]
+MISSING_ENV_VARS = [var for var in REQUIRED_ENV_VARS if not os.getenv(var)]
+SKIP_REASON = (
+    "Missing required Supabase/Google env vars: " + ", ".join(MISSING_ENV_VARS)
+    if MISSING_ENV_VARS
+    else ""
+)
 
 try:
     from config import get_settings
     import jwt
     from datetime import datetime, timedelta, timezone
 
+    @pytest.mark.skipif(bool(MISSING_ENV_VARS), reason=SKIP_REASON)
     def test_jwt_config():
         """Test that JWT secret is configured and can sign/verify tokens."""
         print("Testing JWT Authentication Configuration...")
