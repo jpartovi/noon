@@ -33,7 +33,7 @@ Noon is a time-first assistant: a SwiftUI app, a FastAPI backend, an LLM calenda
 3. **Agent chooses a calendar tool.** Create/update/list/delete payloads are validated (see `noon-agent/main.py`) before touching Google Calendar.
 4. **State is synced.** Supabase tracks users, phone-auth sessions, and linked Google accounts; the backend enforces all that.
 
-Everything is modular on purpose—you can iterate on the agent without touching Swift, and vice versa.
+Everything is modular on purpose — you can iterate on the agent without touching Swift, and vice versa.
 
 ## What Noon Actually Does
 - **Transcribes intent**: the iOS mic hands raw audio to `noon-v2nl`, which boosts key vocabulary and returns articulate transcripts via Deepgram.
