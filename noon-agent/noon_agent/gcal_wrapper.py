@@ -107,6 +107,7 @@ def create_calendar_event(
         return {
             "status": "success",
             "event_id": event["id"],
+            "calendar_id": calendar_id,  # Include calendar_id with event_id
             "summary": event["summary"],
             "start": event["start"]["dateTime"],
             "end": event["end"]["dateTime"],
@@ -172,6 +173,7 @@ def read_calendar_events(
             formatted_events.append(
                 {
                     "event_id": event["id"],
+                    "calendar_id": calendar_id,  # Include calendar_id with event_id
                     "summary": event.get("summary", "No title"),
                     "start": event["start"].get("dateTime", event["start"].get("date")),
                     "end": event["end"].get("dateTime", event["end"].get("date")),
@@ -279,6 +281,7 @@ def update_calendar_event(
         return {
             "status": "success",
             "event_id": updated_event["id"],
+            "calendar_id": calendar_id,  # Include calendar_id with event_id
             "summary": updated_event["summary"],
             "start": updated_event["start"].get("dateTime"),
             "end": updated_event["end"].get("dateTime"),
@@ -370,6 +373,7 @@ def delete_calendar_event(service, event_id: str, calendar_id: str = "primary") 
         return {
             "status": "success",
             "event_id": event_id,
+            "calendar_id": calendar_id,  # Include calendar_id with event_id
             "summary": event_summary,
             "message": f"Deleted event: {event_summary}",
         }

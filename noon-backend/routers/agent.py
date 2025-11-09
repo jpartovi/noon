@@ -121,6 +121,12 @@ async def get_event_details_with_schedule(
     """
     Get full event details by event ID and calendar ID.
     
+    Note: Google Calendar event IDs are unique per calendar, not globally unique.
+    Therefore, both event_id and calendar_id are required to uniquely identify an event.
+    
+    If calendar_id is not provided, the function will search across all user calendars
+    to find the event (less efficient but more convenient).
+    
     Also retrieves the day's schedule for the event's date.
     
     Returns:
@@ -149,20 +155,51 @@ async def get_event_details_with_schedule(
         # Get calendar service
         service = get_calendar_service(access_token)
 
-        # Get event details
-        event_result = get_event_details(
-            service=service,
-            event_id=payload.event_id,
-            calendar_id=payload.calendar_id,
-        )
+        # Determine which calendar to search
+        calendar_id = payload.calendar_id
+        all_calendar_ids = user_context.get("all_calendar_ids", [])
+        
+        # If calendar_id not provided, search across all calendars
+        if not calendar_id or calendar_id == "primary":
+            # Try primary calendar first
+            primary_calendar_id = user_context.get("primary_calendar_id", "primary")
+            event_result = get_event_details(
+                service=service,
+                event_id=payload.event_id,
+                calendar_id=primary_calendar_id,
+            )
+            
+            # If not found in primary, search other calendars
+            if event_result.get("status") != "success" and all_calendar_ids:
+                for cal_id in all_calendar_ids:
+                    if cal_id == primary_calendar_id:
+                        continue  # Already tried
+                    event_result = get_event_details(
+                        service=service,
+                        event_id=payload.event_id,
+                        calendar_id=cal_id,
+                    )
+                    if event_result.get("status") == "success":
+                        calendar_id = cal_id
+                        break
+        else:
+            # Use provided calendar_id
+            event_result = get_event_details(
+                service=service,
+                event_id=payload.event_id,
+                calendar_id=calendar_id,
+            )
 
         if event_result.get("status") != "success":
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Event not found: {event_result.get('error', 'Unknown error')}",
+                detail=f"Event not found: {event_result.get('error', 'Unknown error')}. Note: Event IDs are unique per calendar, so the event_id must exist in the specified calendar_id.",
             )
 
         event = event_result
+        # Update calendar_id in event if we found it in a different calendar
+        if calendar_id and event.get("calendar_id") != calendar_id:
+            event["calendar_id"] = calendar_id
 
         # Parse event start time to get the day
         start_time_str = event.get("start", "")
@@ -194,10 +231,11 @@ async def get_event_details_with_schedule(
         day_start = event_start.replace(hour=0, minute=0, second=0, microsecond=0)
         day_end = day_start + timedelta(days=1)
 
-        # Get all events for that day
+        # Get all events for that day (use the calendar_id where we found the event)
+        final_calendar_id = event.get("calendar_id", payload.calendar_id or "primary")
         schedule_result = read_calendar_events(
             service=service,
-            calendar_id=payload.calendar_id,
+            calendar_id=final_calendar_id,
             time_min=day_start,
             time_max=day_end,
             max_results=500,  # High limit to get all events for the day

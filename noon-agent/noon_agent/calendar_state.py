@@ -18,6 +18,7 @@ class CalendarEvent(TypedDict):
     """Simplified event structure."""
 
     event_id: str
+    calendar_id: str  # Required with event_id (event IDs are unique per calendar)
     summary: str
     start: str  # ISO 8601 format
     end: str
@@ -42,6 +43,7 @@ class Action(TypedDict):
     action_id: str
     type: str  # create, update, delete, read
     event_id: Optional[str]
+    calendar_id: Optional[str]  # Required with event_id (event IDs are unique per calendar)
     details: Dict[str, Any]
     status: str  # success, failed
     error: Optional[str]

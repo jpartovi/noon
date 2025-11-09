@@ -34,13 +34,15 @@ def build_intent_parser(model: str = "gpt-4o-mini", temperature: float = 0.2):
 
 **OUTPUT SCHEMA:**
 You must return a JSON object with these exact fields:
-- action: REQUIRED - one of: "create", "delete", "update", "read"
+- action: REQUIRED - one of: "create", "delete", "update", "read", "search", "schedule"
 - start_time: REQUIRED for create action - ISO 8601 datetime in PST (e.g., "2025-01-31T14:00:00-08:00")
 - end_time: REQUIRED for create action - ISO 8601 datetime in PST (e.g., "2025-01-31T15:00:00-08:00")
 - location: Optional - string for event location/venue
 - people: Optional - list of email addresses or names (e.g., ["jude@example.com", "Alice"])
 - name: Optional - only for identifying existing events in update/delete actions
 - summary: Optional - event title/description (e.g., "Coffee with Jude", "Team lunch")
+- event_id: Optional - REQUIRED for update/delete actions - Google Calendar event ID
+- calendar_id: Optional - REQUIRED with event_id for update/delete - Calendar ID (defaults to "primary" if not specified)
 - auth_provider: Optional - leave null (handled elsewhere)
 - auth_token: Optional - leave null (handled elsewhere)
 

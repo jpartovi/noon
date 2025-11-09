@@ -146,9 +146,14 @@ Content-Type: application/json
 ```typescript
 {
   event_id: string;        // Required: Event ID from Google Calendar
-  calendar_id?: string;    // Optional: Calendar ID (defaults to "primary")
+  calendar_id?: string;    // Optional: Calendar ID (if not provided, searches all calendars)
 }
 ```
+
+**Important Note on Event IDs:**
+Google Calendar event IDs are **unique per calendar, NOT globally unique**. The same event ID can exist in multiple calendars. Therefore:
+- **Best practice**: Provide both `event_id` and `calendar_id` for fastest lookup
+- **Convenience**: If `calendar_id` is omitted, the endpoint will search across all your calendars (slower but more convenient)
 
 **Response:**
 ```json
@@ -255,16 +260,28 @@ Content-Type: application/json
 - `404 Not Found` - Event not found
 - `500 Internal Server Error` - Server error
 
-**Example Request:**
-```bash
-curl -X POST "http://localhost:8000/agent/event" \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "event_id": "abc123xyz",
-    "calendar_id": "primary"
-  }'
-```
+**Example Requests:**
+
+1. **With calendar_id (recommended for performance):**
+   ```bash
+   curl -X POST "http://localhost:8000/agent/event" \
+     -H "Authorization: Bearer <token>" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "event_id": "abc123xyz",
+       "calendar_id": "primary"
+     }'
+   ```
+
+2. **Without calendar_id (searches all calendars):**
+   ```bash
+   curl -X POST "http://localhost:8000/agent/event" \
+     -H "Authorization: Bearer <token>" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "event_id": "abc123xyz"
+     }'
+   ```
 
 ---
 

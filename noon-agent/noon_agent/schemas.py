@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict
 
 
 class ParsedIntent(BaseModel):
-    action: Literal["create", "delete", "update", "read"]
+    action: Literal["create", "delete", "update", "read", "search", "schedule"]
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
     location: Optional[str] = None
@@ -16,5 +16,7 @@ class ParsedIntent(BaseModel):
     auth_provider: Optional[str] = None
     auth_token: Optional[str] = None
     summary: Optional[str] = None
+    event_id: Optional[str] = None  # Required for update/delete actions
+    calendar_id: Optional[str] = None  # Required with event_id for update/delete
 
     model_config = ConfigDict(extra="forbid")

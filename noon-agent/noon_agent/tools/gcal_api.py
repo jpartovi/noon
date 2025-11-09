@@ -62,13 +62,13 @@ def create_event_api(
         return {
             "action_id": str(uuid.uuid4()),
             "event_id": event["id"],
+            "calendar_id": calendar_id,  # Include calendar_id with event_id
             "status": "success",
             "details": {
                 "summary": event["summary"],
                 "start": event["start"]["dateTime"],
                 "end": event["end"]["dateTime"],
                 "event_link": event.get("htmlLink"),
-                "calendar_id": calendar_id,
             },
         }
 
@@ -117,6 +117,7 @@ def update_event_api(
         return {
             "action_id": str(uuid.uuid4()),
             "event_id": updated_event["id"],
+            "calendar_id": calendar_id,  # Include calendar_id with event_id
             "status": "success",
             "details": {
                 "summary": updated_event["summary"],
@@ -147,6 +148,7 @@ def delete_event_api(service, calendar_id: str, event_id: str) -> Dict[str, Any]
         return {
             "action_id": str(uuid.uuid4()),
             "event_id": event_id,
+            "calendar_id": calendar_id,  # Include calendar_id with event_id
             "status": "success",
             "details": {
                 "deleted_event": {
@@ -218,11 +220,11 @@ def list_events_api(
             formatted_events.append(
                 {
                     "event_id": event["id"],
+                    "calendar_id": calendar_id,  # Include calendar_id with event_id
                     "summary": event.get("summary", "No title"),
                     "start": event["start"].get("dateTime", event["start"].get("date")),
                     "end": event["end"].get("dateTime", event["end"].get("date")),
                     "attendees": [a["email"] for a in event.get("attendees", [])],
-                    "calendar_id": calendar_id,
                 }
             )
 
@@ -239,6 +241,7 @@ def get_event_details_api(service, calendar_id: str, event_id: str) -> Dict[str,
 
         return {
             "event_id": event["id"],
+            "calendar_id": calendar_id,  # Include calendar_id with event_id
             "summary": event.get("summary", "No title"),
             "description": event.get("description", ""),
             "start": event["start"].get("dateTime", event["start"].get("date")),
@@ -254,7 +257,6 @@ def get_event_details_api(service, calendar_id: str, event_id: str) -> Dict[str,
             "event_link": event.get("htmlLink"),
             "created": event.get("created"),
             "updated": event.get("updated"),
-            "calendar_id": calendar_id,
         }
 
     except HttpError as error:
