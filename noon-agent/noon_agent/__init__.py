@@ -1,5 +1,6 @@
 """Simple Google Calendar agent for the Noon project."""
 
+from .calendar_service import CalendarService, CalendarServiceError
 from .gcal_wrapper import (
     get_calendar_service,
     create_calendar_event,
@@ -11,6 +12,9 @@ from .gcal_wrapper import (
 from .main import State, OutputState, build_agent_graph, invoke_agent
 
 __all__ = [
+    # Calendar abstraction
+    "CalendarService",
+    "CalendarServiceError",
     # Calendar service
     "get_calendar_service",
     # Calendar operations

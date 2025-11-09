@@ -15,15 +15,8 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 
+from .calendar_service import CalendarService, CalendarServiceError
 from .helpers import build_intent_parser
-from .gcal_auth import get_calendar_service
-from .gcal_wrapper import (
-    create_calendar_event,
-    delete_calendar_event,
-    update_calendar_event,
-    search_calendar_events,
-    read_calendar_events,
-)
 from .constants import self
 
 
@@ -54,6 +47,9 @@ class OutputState(TypedDict):
     response: str
     success: bool
     action: str | None
+
+
+calendar_service = CalendarService()
 
 
 def route_action(state: State) -> str:
@@ -128,36 +124,14 @@ def create_event(state: State) -> State:
     logger.info("=" * 80)
     logger.info("CREATE_EVENT: Starting event creation")
     try:
-        auth_token = state.get("auth_token")
-        if not auth_token:
-            return _with_summary(state, "Error: No authentication token provided")
-
-        logger.info("CREATE_EVENT: Getting Google Calendar service...")
-        service = get_calendar_service(auth_token)
-
-        # Get calendar_id from state or context, default to "primary"
-        calendar_id = state.get("calendar_id") or state.get("context", {}).get(
-            "primary_calendar_id", "primary"
-        )
-        logger.info(f"CREATE_EVENT: Using calendar_id: {calendar_id}")
-
         # Handle event title - try name first, then summary, then default
         event_title = state.get("name") or state.get("summary") or "New Event"
         logger.info(f"CREATE_EVENT: Event title: {event_title}")
 
-        # Validate required fields
         start_time = state.get("start_time")
         end_time = state.get("end_time")
         logger.info(f"CREATE_EVENT: Start time: {start_time}")
         logger.info(f"CREATE_EVENT: End time: {end_time}")
-
-        if not start_time or not end_time:
-            debug_info = f"start_time={start_time}, end_time={end_time}"
-            logger.error(f"CREATE_EVENT: Missing required time fields - {debug_info}")
-            return _with_summary(
-                state,
-                f"Failed to create event: start_time and end_time are required. Parsed: {debug_info}",
-            )
 
         attendees = state.get("people")
         logger.info(f"CREATE_EVENT: Attendees: {attendees}")
@@ -165,19 +139,16 @@ def create_event(state: State) -> State:
             f"CREATE_EVENT: Description: {state.get('summary') if state.get('name') else None}"
         )
 
-        # Get timezone from context or default to UTC
-        timezone = state.get("context", {}).get("timezone", "UTC")
-
-        logger.info("CREATE_EVENT: Calling Google Calendar API...")
-        result = create_calendar_event(
-            service=service,
+        logger.info("CREATE_EVENT: Calling calendar service...")
+        result = calendar_service.create_event(
+            auth_token=state.get("auth_token"),
             summary=event_title,
             start_time=start_time,
             end_time=end_time,
             description=state.get("summary") if state.get("name") else None,
             attendees=attendees,
-            calendar_id=calendar_id,
-            timezone=timezone,
+            calendar_id=state.get("calendar_id"),
+            context=state.get("context"),
         )
 
         if result["status"] == "success":
@@ -195,6 +166,10 @@ def create_event(state: State) -> State:
 
         logger.info("=" * 80)
         return next_state
+    except CalendarServiceError as e:
+        logger.error("CREATE_EVENT: SERVICE ERROR - %s", str(e))
+        logger.info("=" * 80)
+        return _with_summary(state, f"Failed to create event: {str(e)}")
     except Exception as e:
         logger.exception(f"CREATE_EVENT: EXCEPTION - {str(e)}")
         logger.info("=" * 80)
@@ -206,29 +181,18 @@ def read_event(state: State) -> State:
     logger.info("=" * 80)
     logger.info("READ_EVENT: Starting event read")
     try:
-        auth_token = state.get("auth_token")
-        if not auth_token:
-            return _with_summary(state, "Error: No authentication token provided")
-
-        logger.info("READ_EVENT: Getting Google Calendar service...")
-        service = get_calendar_service(auth_token)
-
-        # Get calendar_id from state or context, default to "primary"
-        calendar_id = state.get("calendar_id") or state.get("context", {}).get(
-            "primary_calendar_id", "primary"
-        )
-        logger.info(f"READ_EVENT: Using calendar_id: {calendar_id}")
-
         logger.info(
-            f"READ_EVENT: Time range - start: {state.get('start_time')}, end: {state.get('end_time')}"
+            "READ_EVENT: Time range - start: %s, end: %s",
+            state.get("start_time"),
+            state.get("end_time"),
         )
-        result = read_calendar_events(
-            service=service,
-            calendar_id=calendar_id,
+        result = calendar_service.read_events(
+            auth_token=state.get("auth_token"),
+            calendar_id=state.get("calendar_id"),
+            context=state.get("context"),
             time_min=state.get("start_time"),
             time_max=state.get("end_time"),
-            query=state.get("query"),  # Support query for search functionality
-            max_results=250,  # Increased for schedule views
+            query=state.get("query"),
         )
 
         if result["status"] == "success":
@@ -249,6 +213,10 @@ def read_event(state: State) -> State:
 
         logger.info("=" * 80)
         return next_state
+    except CalendarServiceError as e:
+        logger.error("READ_EVENT: SERVICE ERROR - %s", str(e))
+        logger.info("=" * 80)
+        return _with_summary(state, f"Error reading events: {str(e)}")
     except Exception as e:
         logger.exception(f"READ_EVENT: EXCEPTION - {str(e)}")
         logger.info("=" * 80)
@@ -265,38 +233,18 @@ def get_schedule(state: State) -> State:
     logger.info("=" * 80)
     logger.info("GET_SCHEDULE: Starting schedule retrieval")
     try:
-        auth_token = state.get("auth_token")
-        if not auth_token:
-            return _with_summary(state, "Error: No authentication token provided")
-
-        logger.info("GET_SCHEDULE: Getting Google Calendar service...")
-        service = get_calendar_service(auth_token)
-
-        # Get calendar_id from state or context, default to "primary"
-        calendar_id = state.get("calendar_id") or state.get("context", {}).get(
-            "primary_calendar_id", "primary"
-        )
-        logger.info(f"GET_SCHEDULE: Using calendar_id: {calendar_id}")
-
-        # Validate date range
         start_time = state.get("start_time")
         end_time = state.get("end_time")
-
-        if not start_time or not end_time:
-            return _with_summary(
-                state, "Error: start_time and end_time are required for schedule retrieval"
-            )
 
         logger.info(f"GET_SCHEDULE: Date range - start: {start_time}, end: {end_time}")
 
         # Get events with higher limit for schedule views
-        result = read_calendar_events(
-            service=service,
-            calendar_id=calendar_id,
-            time_min=start_time,
-            time_max=end_time,
-            max_results=500,  # Higher limit for schedule views
-            query=None,  # No query filter for schedule
+        result = calendar_service.get_schedule(
+            auth_token=state.get("auth_token"),
+            calendar_id=state.get("calendar_id"),
+            context=state.get("context"),
+            start_time=start_time,
+            end_time=end_time,
         )
 
         if result["status"] == "success":
@@ -324,6 +272,10 @@ def get_schedule(state: State) -> State:
 
         logger.info("=" * 80)
         return next_state
+    except CalendarServiceError as e:
+        logger.error("GET_SCHEDULE: SERVICE ERROR - %s", str(e))
+        logger.info("=" * 80)
+        return _with_summary(state, f"Error retrieving schedule: {str(e)}")
     except Exception as e:
         logger.exception(f"GET_SCHEDULE: EXCEPTION - {str(e)}")
         logger.info("=" * 80)
@@ -333,34 +285,21 @@ def get_schedule(state: State) -> State:
 def update_event(state: State) -> State:
     """Update a calendar event using Google Calendar API."""
     try:
-        auth_token = state.get("auth_token")
-        if not auth_token:
-            return _with_summary(state, "Error: No authentication token provided")
-
-        event_id = state.get("event_id")
-        if not event_id:
-            return _with_summary(state, "Error: event_id is required for update")
-
-        service = get_calendar_service(auth_token)
-
-        # Get calendar_id from state or context, default to "primary"
-        calendar_id = state.get("calendar_id") or state.get("context", {}).get(
-            "primary_calendar_id", "primary"
+        logger.info(
+            "UPDATE_EVENT: Using calendar_id: %s, event_id: %s",
+            state.get("calendar_id") or state.get("context", {}).get("primary_calendar_id"),
+            state.get("event_id"),
         )
-        logger.info(f"UPDATE_EVENT: Using calendar_id: {calendar_id}, event_id: {event_id}")
 
-        # Get timezone from context or default to UTC
-        timezone = state.get("context", {}).get("timezone", "UTC")
-
-        result = update_calendar_event(
-            service=service,
-            event_id=event_id,
+        result = calendar_service.update_event(
+            auth_token=state.get("auth_token"),
+            event_id=state.get("event_id"),
             summary=state.get("summary") or state.get("name"),
             start_time=state.get("start_time"),
             end_time=state.get("end_time"),
             description=state.get("description"),
-            calendar_id=calendar_id,
-            timezone=timezone,
+            calendar_id=state.get("calendar_id"),
+            context=state.get("context"),
         )
 
         if result["status"] == "success":
@@ -373,6 +312,8 @@ def update_event(state: State) -> State:
             next_state = _with_summary(state, message)
             next_state["result_data"] = result
             return next_state
+    except CalendarServiceError as e:
+        return _with_summary(state, f"Error updating event: {str(e)}")
     except Exception as e:
         return _with_summary(state, f"Error updating event: {str(e)}")
 
@@ -380,26 +321,17 @@ def update_event(state: State) -> State:
 def delete_event(state: State) -> State:
     """Delete a calendar event using Google Calendar API."""
     try:
-        auth_token = state.get("auth_token")
-        if not auth_token:
-            return _with_summary(state, "Error: No authentication token provided")
-
-        event_id = state.get("event_id")
-        if not event_id:
-            return _with_summary(state, "Error: event_id is required for delete")
-
-        service = get_calendar_service(auth_token)
-
-        # Get calendar_id from state or context, default to "primary"
-        calendar_id = state.get("calendar_id") or state.get("context", {}).get(
-            "primary_calendar_id", "primary"
+        logger.info(
+            "DELETE_EVENT: Using calendar_id: %s, event_id: %s",
+            state.get("calendar_id") or state.get("context", {}).get("primary_calendar_id"),
+            state.get("event_id"),
         )
-        logger.info(f"DELETE_EVENT: Using calendar_id: {calendar_id}, event_id: {event_id}")
 
-        result = delete_calendar_event(
-            service=service,
-            event_id=event_id,
-            calendar_id=calendar_id,
+        result = calendar_service.delete_event(
+            auth_token=state.get("auth_token"),
+            event_id=state.get("event_id"),
+            calendar_id=state.get("calendar_id"),
+            context=state.get("context"),
         )
 
         if result["status"] == "success":
@@ -412,6 +344,8 @@ def delete_event(state: State) -> State:
             next_state = _with_summary(state, message)
             next_state["result_data"] = result
             return next_state
+    except CalendarServiceError as e:
+        return _with_summary(state, f"Error deleting event: {str(e)}")
     except Exception as e:
         return _with_summary(state, f"Error deleting event: {str(e)}")
 
@@ -419,26 +353,17 @@ def delete_event(state: State) -> State:
 def search_event(state: State) -> State:
     """Search calendar events using free text query."""
     try:
-        auth_token = state.get("auth_token")
-        if not auth_token:
-            return _with_summary(state, "Error: No authentication token provided")
-
-        query = state.get("query", "")
-        if not query:
-            return _with_summary(state, "Error: query is required for search")
-
-        service = get_calendar_service(auth_token)
-
-        # Get calendar_id from state or context, default to "primary"
-        calendar_id = state.get("calendar_id") or state.get("context", {}).get(
-            "primary_calendar_id", "primary"
+        logger.info(
+            "SEARCH_EVENT: Time range - start: %s, end: %s",
+            state.get("start_time"),
+            state.get("end_time"),
         )
-        logger.info(f"SEARCH_EVENT: Using calendar_id: {calendar_id}, query: {query}")
 
-        result = search_calendar_events(
-            service=service,
-            query=query,
-            calendar_id=calendar_id,
+        result = calendar_service.search_events(
+            auth_token=state.get("auth_token"),
+            query=state.get("query"),
+            calendar_id=state.get("calendar_id"),
+            context=state.get("context"),
             time_min=state.get("start_time"),
             time_max=state.get("end_time"),
         )
@@ -459,6 +384,8 @@ def search_event(state: State) -> State:
             next_state = _with_summary(state, message)
             next_state["result_data"] = result
             return next_state
+    except CalendarServiceError as e:
+        return _with_summary(state, f"Error searching events: {str(e)}")
     except Exception as e:
         return _with_summary(state, f"Error searching events: {str(e)}")
 
