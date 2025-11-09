@@ -92,32 +92,34 @@ async def chat_with_agent(
             message=payload.text,
         )
 
-        # Determine success
-        success = full_result.get("success", True)
+        # Extract values from result
+        tool_name = result.get("tool", "read")
+        summary = result.get("summary", "No response")
+        result_data = result.get("result")
+        success = result.get("success", True)
 
-        # Extract result data from the agent execution
-        result_data = full_result.get("result_data")
-
-        # Log agent request details (enhanced logging)
+        # Log agent observability (LLM/agent calls only)
         try:
-            from services.supabase_client import get_supabase_client
-            supabase = get_supabase_client()
+            from services.agent_observability import agent_observability_service
             
-            # Extract intent and entities (simplified - can be enhanced with NLP)
+            # Extract intent and entities
             intent_category = _extract_intent_category(payload.text, tool_name)
             entities = _extract_entities(result_data)
             
-            # Update request log with agent details
-            supabase.table("request_logs").update({
-                "agent_action": tool_name,
-                "agent_tool": tool_name,
-                "agent_success": success,
-                "agent_summary": summary[:500],  # Truncate if too long
-                "intent_category": intent_category,
-                "entities": entities,
-            }).eq("user_id", current_user.id).order("created_at", desc=True).limit(1).execute()
+            # Log to agent observability table
+            agent_observability_service.log_agent_call(
+                user_id=current_user.id,
+                agent_action=tool_name,
+                user_message=payload.text,
+                agent_response=summary,
+                agent_tool=tool_name,
+                tool_result=result_data,
+                success=success,
+                intent_category=intent_category,
+                entities=entities,
+            )
         except Exception as e:
-            logger.debug(f"Failed to update request log with agent details: {e}")
+            logger.debug(f"Failed to log agent observability: {e}")
 
         return agent_schema.AgentChatResponse(
             tool=tool_name,

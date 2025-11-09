@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 
 from middleware.request_logging import RequestLoggingMiddleware
-from routers import agent, auth, google_accounts
+from routers import agent, auth, google_accounts, user_insights
 
 
 def create_app() -> FastAPI:
@@ -16,6 +16,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router)
     app.include_router(google_accounts.router)
     app.include_router(agent.router)
+    app.include_router(user_insights.router)
 
     @app.get("/healthz", tags=["health"])
     async def healthcheck() -> dict[str, str]:

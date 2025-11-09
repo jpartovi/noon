@@ -10,6 +10,7 @@ from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
+from models.request_logs import RequestLogCreate
 from services.supabase_client import get_supabase_client
 
 logger = logging.getLogger(__name__)
@@ -22,17 +23,26 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         """
         Initialize request logging middleware.
 
+        Note: This middleware only logs agent/LLM calls (endpoints starting with /agent/).
+        For full agent observability, use AgentObservabilityService directly.
+
         Args:
             app: ASGI application
             exclude_paths: List of path prefixes to exclude from logging (e.g., ['/healthz'])
         """
         super().__init__(app)
         self.exclude_paths = exclude_paths or ["/healthz", "/docs", "/openapi.json", "/redoc"]
+        # Only log agent endpoints
+        self.agent_paths = ["/agent/"]
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        """Log request and response details."""
+        """Log request and response details (only for agent endpoints)."""
         # Skip logging for excluded paths
         if any(request.url.path.startswith(path) for path in self.exclude_paths):
+            return await call_next(request)
+
+        # Only log agent endpoints (LLM/agent calls)
+        if not any(request.url.path.startswith(path) for path in self.agent_paths):
             return await call_next(request)
 
         start_time = time.time()
@@ -134,24 +144,25 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             return
 
         try:
+            # Create request log using Pydantic model for validation
+            log_data = RequestLogCreate(
+                user_id=user_id,
+                endpoint=endpoint,
+                method=method,
+                request_body=request_body,
+                request_headers=request_headers,
+                response_status=response_status,
+                response_time_ms=response_time_ms,
+                agent_action=agent_action,
+                agent_tool=agent_tool,
+                agent_success=agent_success,
+                agent_summary=agent_summary,
+                ip_address=ip_address,
+                user_agent=user_agent,
+            )
+
             supabase = get_supabase_client()
-            supabase.table("request_logs").insert(
-                {
-                    "user_id": user_id,
-                    "endpoint": endpoint,
-                    "method": method,
-                    "request_body": request_body,
-                    "request_headers": request_headers,
-                    "response_status": response_status,
-                    "response_time_ms": response_time_ms,
-                    "agent_action": agent_action,
-                    "agent_tool": agent_tool,
-                    "agent_success": agent_success,
-                    "agent_summary": agent_summary,
-                    "ip_address": ip_address,
-                    "user_agent": user_agent,
-                }
-            ).execute()
+            supabase.table("request_logs").insert(log_data.model_dump()).execute()
         except Exception as e:
             logger.error(f"Database logging failed: {e}", exc_info=True)
 

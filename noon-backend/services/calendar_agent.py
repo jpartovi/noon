@@ -21,12 +21,12 @@ def _import_agent_components():
         sys.path.insert(0, agent_path)
 
     try:
-        from noon_agent.main import graph  # type: ignore
+        from noon_agent.main import State, graph  # type: ignore
         from noon_agent.db_context import load_user_context_from_db  # type: ignore
     except ImportError as exc:  # pragma: no cover - startup failure
         raise ImportError("Failed to import noon-agent modules") from exc
 
-    return graph, load_user_context_from_db
+    return graph, load_user_context_from_db, State
 
 
 class CalendarAgentError(RuntimeError):
@@ -45,14 +45,17 @@ class CalendarAgentService:
         *,
         graph: Optional[Any] = None,
         load_user_context: Optional[Any] = None,
+        state_type: Optional[Any] = None,
     ) -> None:
         if graph is None or load_user_context is None:
-            default_graph, default_loader = _import_agent_components()
+            default_graph, default_loader, default_state = _import_agent_components()
             graph = graph or default_graph
             load_user_context = load_user_context or default_loader
+            state_type = state_type or default_state
 
         self._graph = graph
         self._load_user_context = load_user_context
+        self._state_type = state_type
 
     def _build_agent_state(
         self, *, message: str, user_context: Dict[str, Any]
@@ -72,7 +75,7 @@ class CalendarAgentService:
             "friends": user_context.get("friends", []),
         }
 
-        state: State = {
+        state: Dict[str, Any] = {
             "messages": message,
             "auth_token": access_token,
             "context": context,

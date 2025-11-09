@@ -210,6 +210,8 @@ class JobType:
     PATTERN_ANALYSIS = "pattern_analysis"
     BULK_OPERATION = "bulk_operation"
     SCHEDULE_OPTIMIZATION = "schedule_optimization"
+    UPDATE_INSIGHT = "update_insight"  # For updating user insights
+    EMIT_PREFERENCE_EVENTS = "emit_preference_events"  # For calendar preference events
 
 
 # Singleton instance
