@@ -109,7 +109,8 @@ struct ScheduleView: View {
                     title: event.title,
                     timeRange: event.timeRange,
                     showTimeRange: shouldShowTimeRange,
-                    cornerRadius: cornerRadius
+                    cornerRadius: cornerRadius,
+                    style: event.style
                 )
                 .frame(width: eventWidth, height: eventHeight, alignment: .top)
                 .position(x: centerX, y: centerY)
@@ -159,6 +160,7 @@ private extension ScheduleView {
         let timeRange: String
         let startHour: Double
         let endHour: Double
+        let style: ScheduleEventCard.Style
 
         var durationHours: Double {
             max(endHour - startHour, 0.25)
@@ -169,25 +171,29 @@ private extension ScheduleView {
                 title: "Daily Standup",
                 timeRange: "9:00 – 9:30 AM",
                 startHour: 9.0,
-                endHour: 9.5
+                endHour: 9.5,
+                style: .standard
             ),
             MockEvent(
                 title: "Product Review",
                 timeRange: "11:00 AM – 12:15 PM",
                 startHour: 11.0,
-                endHour: 12.25
+                endHour: 12.25,
+                style: .standard
             ),
             MockEvent(
                 title: "Lunch with Jordan",
                 timeRange: "1:00 – 1:45 PM",
                 startHour: 13.0,
-                endHour: 13.75
+                endHour: 13.75,
+                style: .highlight
             ),
             MockEvent(
                 title: "AI Strategy Session",
                 timeRange: "3:30 – 4:30 PM",
                 startHour: 15.5,
-                endHour: 16.5
+                endHour: 16.5,
+                style: .standard
             )
         ]
     }

@@ -8,18 +8,51 @@
 import SwiftUI
 
 struct ScheduleEventCard: View {
+    enum Style {
+        case standard
+        case highlight
+    }
+
     let title: String
     let timeRange: String
     let showTimeRange: Bool
     let cornerRadius: CGFloat
+    let style: Style
 
-    private let backgroundColor = ColorPalette.Surface.overlay.opacity(0.92)
-    private let borderColor = ColorPalette.Text.secondary.opacity(0.45)
-    private let shadowColor = Color.black.opacity(0.15)
+    private var backgroundStyle: AnyShapeStyle {
+        switch style {
+        case .standard:
+            return AnyShapeStyle(ColorPalette.Surface.overlay.opacity(0.92))
+        case .highlight:
+            return AnyShapeStyle(
+                ColorPalette.Semantic.highlightBackground
+            )
+        }
+    }
+
+    private var borderStyle: AnyShapeStyle {
+        switch style {
+        case .standard:
+            return AnyShapeStyle(ColorPalette.Text.secondary.opacity(0.45))
+        case .highlight:
+            return AnyShapeStyle(
+                ColorPalette.Gradients.highlightBorder
+            )
+        }
+    }
+
+    private var shadowColor: Color {
+        switch style {
+        case .standard:
+            return Color.black.opacity(0.15)
+        case .highlight:
+            return ColorPalette.Semantic.primary.opacity(0.25)
+        }
+    }
 
     var body: some View {
         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            .fill(backgroundColor)
+            .fill(backgroundStyle)
             .overlay(alignment: .leading) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title)
@@ -37,7 +70,7 @@ struct ScheduleEventCard: View {
             }
             .overlay {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(borderColor, lineWidth: 1)
+                    .stroke(borderStyle, lineWidth: 1)
             }
             .shadow(color: shadowColor, radius: 14, x: 0, y: 10)
     }
@@ -50,7 +83,8 @@ struct ScheduleEventCard_Previews: PreviewProvider {
                 title: "Daily Standup",
                 timeRange: "9:00 – 9:30 AM",
                 showTimeRange: false,
-                cornerRadius: 12
+                cornerRadius: 12,
+                style: .standard
             )
             .frame(height: 48)
 
@@ -58,7 +92,17 @@ struct ScheduleEventCard_Previews: PreviewProvider {
                 title: "Product Review",
                 timeRange: "11:00 AM – 12:15 PM",
                 showTimeRange: true,
-                cornerRadius: 12
+                cornerRadius: 12,
+                style: .standard
+            )
+            .frame(height: 80)
+
+            ScheduleEventCard(
+                title: "Investor Update",
+                timeRange: "2:00 – 3:00 PM",
+                showTimeRange: true,
+                cornerRadius: 12,
+                style: .highlight
             )
             .frame(height: 80)
         }
