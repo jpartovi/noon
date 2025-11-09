@@ -107,6 +107,7 @@ def create_calendar_event(
         return {
             "status": "success",
             "event_id": event["id"],
+            "calendar_id": calendar_id,  # Include calendar_id with event_id
             "summary": event["summary"],
             "start": event["start"]["dateTime"],
             "end": event["end"]["dateTime"],
@@ -172,6 +173,7 @@ def read_calendar_events(
             formatted_events.append(
                 {
                     "event_id": event["id"],
+                    "calendar_id": calendar_id,  # Include calendar_id with event_id
                     "summary": event.get("summary", "No title"),
                     "start": event["start"].get("dateTime", event["start"].get("date")),
                     "end": event["end"].get("dateTime", event["end"].get("date")),
@@ -279,10 +281,66 @@ def update_calendar_event(
         return {
             "status": "success",
             "event_id": updated_event["id"],
+            "calendar_id": calendar_id,  # Include calendar_id with event_id
             "summary": updated_event["summary"],
             "start": updated_event["start"].get("dateTime"),
             "end": updated_event["end"].get("dateTime"),
             "link": updated_event.get("htmlLink"),
+        }
+
+    except HttpError as error:
+        return {
+            "status": "error",
+            "error": str(error),
+        }
+
+
+def get_event_details(
+    service,
+    event_id: str,
+    calendar_id: str = "primary",
+) -> Dict[str, Any]:
+    """
+    Get full details of a specific calendar event.
+
+    Args:
+        service: Google Calendar API service
+        event_id: ID of the event to retrieve
+        calendar_id: Calendar ID (default: "primary")
+
+    Returns:
+        Dictionary with full event details
+    """
+    try:
+        event = service.events().get(calendarId=calendar_id, eventId=event_id).execute()
+
+        return {
+            "status": "success",
+            "event_id": event["id"],
+            "summary": event.get("summary", "No title"),
+            "description": event.get("description", ""),
+            "location": event.get("location", ""),
+            "start": event["start"].get("dateTime", event["start"].get("date")),
+            "end": event["end"].get("dateTime", event["end"].get("date")),
+            "timezone": event["start"].get("timeZone", "UTC"),
+            "attendees": [
+                {
+                    "email": a["email"],
+                    "displayName": a.get("displayName", ""),
+                    "responseStatus": a.get("responseStatus", "needsAction"),
+                }
+                for a in event.get("attendees", [])
+            ],
+            "organizer": {
+                "email": event["organizer"].get("email", ""),
+                "displayName": event["organizer"].get("displayName", ""),
+            } if event.get("organizer") else None,
+            "event_link": event.get("htmlLink"),
+            "created": event.get("created"),
+            "updated": event.get("updated"),
+            "calendar_id": calendar_id,
+            "recurrence": event.get("recurrence", []),
+            "reminders": event.get("reminders", {}),
         }
 
     except HttpError as error:
@@ -315,6 +373,7 @@ def delete_calendar_event(service, event_id: str, calendar_id: str = "primary") 
         return {
             "status": "success",
             "event_id": event_id,
+            "calendar_id": calendar_id,  # Include calendar_id with event_id
             "summary": event_summary,
             "message": f"Deleted event: {event_summary}",
         }
