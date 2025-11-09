@@ -10,6 +10,7 @@ import Foundation
 struct AgentActionResult {
     let statusCode: Int
     let data: Data
+    let agentResponse: AgentResponse
 
     var responseString: String? {
         String(data: data, encoding: .utf8)
@@ -24,6 +25,7 @@ struct AgentActionService: AgentActionServicing {
     enum ServiceError: Error {
         case invalidURL
         case unexpectedResponse
+        case decodingFailed(underlying: Error)
     }
 
     func performAgentAction(fileURL: URL, accessToken: String) async throws -> AgentActionResult {
@@ -52,7 +54,14 @@ struct AgentActionService: AgentActionServicing {
             throw ServerError(statusCode: statusCode, message: message)
         }
 
-        return AgentActionResult(statusCode: statusCode, data: data)
+        do {
+            let decoder = JSONDecoder()
+            let agentResponse = try decoder.decode(AgentResponse.self, from: data)
+
+            return AgentActionResult(statusCode: statusCode, data: data, agentResponse: agentResponse)
+        } catch {
+            throw ServiceError.decodingFailed(underlying: error)
+        }
     }
 }
 

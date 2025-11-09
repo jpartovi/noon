@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from functools import lru_cache
 from typing import Any, Dict, Iterable, List, Tuple
 
@@ -157,6 +158,23 @@ def list_google_accounts(user_id: str) -> List[Dict[str, Any]]:
     return result.data or []
 
 
+def list_google_calendars(user_id: str) -> List[Dict[str, Any]]:
+    """List all calendars for a user from the database."""
+    client = get_service_client()
+    try:
+        result = (
+            client.table("calendars").select("*").eq("user_id", user_id).execute()
+        )
+    except APIError as exc:
+        raise SupabaseStorageError(exc.message) from exc
+    return result.data or []
+
+
+def list_calendars(user_id: str) -> List[Dict[str, Any]]:
+    """Backward-compatible alias for codepaths expecting list_calendars."""
+    return list_google_calendars(user_id)
+
+
 async def get_google_account(user_id: str) -> Dict[str, Any] | None:
     """
     Get the first Google account for a user.
@@ -306,3 +324,38 @@ def sync_google_calendars(user_id: str, calendars: Iterable[Dict[str, Any]]) -> 
         _ = response.data
     except APIError as exc:
         raise SupabaseStorageError(exc.message) from exc
+
+
+def update_google_account_tokens(
+    user_id: str,
+    account_id: str,
+    *,
+    access_token: str,
+    refresh_token: str | None,
+    expires_at: datetime | None,
+    metadata: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+    client = get_service_client()
+    payload = _without_none(
+        {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "expires_at": expires_at,
+            "metadata": metadata,
+        }
+    )
+    try:
+        result = (
+            client.table("google_accounts")
+            .update(payload)
+            .eq("user_id", user_id)
+            .eq("id", account_id)
+            .execute()
+        )
+    except APIError as exc:
+        raise SupabaseStorageError(exc.message) from exc
+    if not result.data:
+        raise SupabaseStorageError(
+            "Google account tokens could not be updated or account not found."
+        )
+    return result.data[0]
