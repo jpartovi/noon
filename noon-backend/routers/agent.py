@@ -11,19 +11,23 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from dependencies import AuthenticatedUser, get_current_user
 from schemas import agent as agent_schema
+from services.calendar_agent import (
+    CalendarAgentError,
+    CalendarAgentUserError,
+    calendar_agent_service,
+)
 
-# Add noon-agent to path for imports
+# Ensure noon-agent package is importable for event utilities
 agent_path = Path(__file__).parent.parent.parent / "noon-agent"
 if str(agent_path) not in sys.path:
     sys.path.insert(0, str(agent_path))
 
 try:
-    from noon_agent.main import State, graph
     from noon_agent.db_context import load_user_context_from_db
     from noon_agent.gcal_auth import get_calendar_service
     from noon_agent.gcal_wrapper import get_event_details, read_calendar_events
-except ImportError as e:
-    logging.error(f"Failed to import agent modules: {e}")
+except ImportError as exc:  # pragma: no cover - startup failure
+    logging.error("Failed to import agent modules: %s", exc)
     raise
 
 router = APIRouter(prefix="/agent", tags=["agent"])
@@ -83,49 +87,9 @@ async def chat_with_agent(
     - success: Whether the operation succeeded
     """
     try:
-        # Load user context from database
-        try:
-            user_context = load_user_context_from_db(current_user.id)
-        except ValueError as e:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Failed to load user context: {str(e)}",
-            ) from e
-
-        # Check if user has Google access token
-        access_token = user_context.get("access_token")
-        if not access_token:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="User has no Google Calendar access token. Please link your Google account first.",
-            )
-
-        # Prepare agent state
-        agent_state: State = {
-            "messages": payload.text,
-            "auth_token": access_token,
-            "context": {
-                "primary_calendar_id": user_context.get(
-                    "primary_calendar_id", "primary"
-                ),
-                "timezone": user_context.get("timezone", "UTC"),
-                "all_calendar_ids": user_context.get("all_calendar_ids", []),
-                "friends": user_context.get("friends", []),
-            },
-        }
-
-        # Invoke the agent
-        # Note: graph.invoke returns the full state, not just OutputState
-        full_result = graph.invoke(agent_state)
-
-        # Extract tool name from action
-        tool_name = full_result.get("action", "read")
-        if not tool_name:
-            tool_name = "read"
-
-        # Get summary from response or summary field
-        summary = full_result.get("response") or full_result.get(
-            "summary", "No response"
+        result = calendar_agent_service.chat(
+            user_id=current_user.id,
+            message=payload.text,
         )
 
         # Determine success
@@ -169,8 +133,8 @@ async def chat_with_agent(
         logger.exception(f"Error invoking agent for user {current_user.id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Agent invocation failed: {str(e)}",
-        ) from e
+            detail=str(exc),
+        ) from exc
 
 
 @router.post("/event", response_model=agent_schema.GetEventResponse)
@@ -180,15 +144,15 @@ async def get_event_details_with_schedule(
 ) -> agent_schema.GetEventResponse:
     """
     Get full event details by event ID and calendar ID.
-    
+
     Note: Google Calendar event IDs are unique per calendar, not globally unique.
     Therefore, both event_id and calendar_id are required to uniquely identify an event.
-    
+
     If calendar_id is not provided, the function will search across all user calendars
     to find the event (less efficient but more convenient).
-    
+
     Also retrieves the day's schedule for the event's date.
-    
+
     Returns:
     - event: Full event details
     - day_schedule: All events for that day
@@ -198,11 +162,11 @@ async def get_event_details_with_schedule(
         # Load user context from database
         try:
             user_context = load_user_context_from_db(current_user.id)
-        except ValueError as e:
+        except ValueError as exc:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Failed to load user context: {str(e)}",
-            ) from e
+                detail=f"Failed to load user context: {exc}",
+            ) from exc
 
         # Check if user has Google access token
         access_token = user_context.get("access_token")
@@ -218,7 +182,7 @@ async def get_event_details_with_schedule(
         # Determine which calendar to search
         calendar_id = payload.calendar_id
         all_calendar_ids = user_context.get("all_calendar_ids", [])
-        
+
         # If calendar_id not provided, search across all calendars
         if not calendar_id or calendar_id == "primary":
             # Try primary calendar first
@@ -228,7 +192,7 @@ async def get_event_details_with_schedule(
                 event_id=payload.event_id,
                 calendar_id=primary_calendar_id,
             )
-            
+
             # If not found in primary, search other calendars
             if event_result.get("status") != "success" and all_calendar_ids:
                 for cal_id in all_calendar_ids:
@@ -253,7 +217,12 @@ async def get_event_details_with_schedule(
         if event_result.get("status") != "success":
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Event not found: {event_result.get('error', 'Unknown error')}. Note: Event IDs are unique per calendar, so the event_id must exist in the specified calendar_id.",
+                detail=(
+                    "Event not found: "
+                    f"{event_result.get('error', 'Unknown error')}. "
+                    "Note: Event IDs are unique per calendar, so the event_id must "
+                    "exist in the specified calendar_id."
+                ),
             )
 
         event = event_result
@@ -277,15 +246,15 @@ async def get_event_details_with_schedule(
                 date_part = start_time_str.split("T")[0]
             else:
                 date_part = start_time_str
-            
+
             # Parse date components
             year, month, day = map(int, date_part.split("-")[:3])
             event_start = datetime(year, month, day)
-        except (ValueError, IndexError) as e:
+        except (ValueError, IndexError) as exc:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Invalid event start time format: {start_time_str}",
-            ) from e
+            ) from exc
 
         # Calculate day boundaries (start and end of the event's day)
         day_start = event_start.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -301,12 +270,16 @@ async def get_event_details_with_schedule(
             max_results=500,  # High limit to get all events for the day
         )
 
-        day_schedule = schedule_result if schedule_result.get("status") == "success" else {
-            "status": "error",
-            "error": schedule_result.get("error", "Unknown error"),
-            "events": [],
-            "count": 0,
-        }
+        day_schedule = (
+            schedule_result
+            if schedule_result.get("status") == "success"
+            else {
+                "status": "error",
+                "error": schedule_result.get("error", "Unknown error"),
+                "events": [],
+                "count": 0,
+            }
+        )
 
         return agent_schema.GetEventResponse(
             event=event,
@@ -316,9 +289,13 @@ async def get_event_details_with_schedule(
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.exception(f"Error getting event details for user {current_user.id}: {e}")
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.exception(
+            "Error getting event details for user %s: %s",
+            current_user.id,
+            exc,
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get event details: {str(e)}",
-        ) from e
+            detail=f"Failed to get event details: {exc}",
+        ) from exc
