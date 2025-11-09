@@ -48,7 +48,9 @@ class GoogleCalendarHttpClient:
     @property
     def client(self) -> httpx.AsyncClient:
         if self._client is None:
-            raise RuntimeError("GoogleCalendarHttpClient must be used as an async context manager")
+            raise RuntimeError(
+                "GoogleCalendarHttpClient must be used as an async context manager"
+            )
         return self._client
 
     async def _request(
@@ -159,4 +161,3 @@ def _safe_json(response: httpx.Response) -> Any:  # pragma: no cover - defensive
         return response.json()
     except ValueError:
         return response.text
-

@@ -81,4 +81,3 @@ async def get_schedule(
             payload.end_date,
         )
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
-

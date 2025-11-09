@@ -11,6 +11,7 @@ from services import supabase_client
 
 security = HTTPBearer()
 
+
 async def get_current_user(
     credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)],
 ) -> AuthenticatedUser:

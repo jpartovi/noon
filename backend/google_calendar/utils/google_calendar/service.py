@@ -8,7 +8,9 @@ from zoneinfo import ZoneInfo
 from fastapi import status
 
 from services import supabase_client
-from google_calendar.utils.google_oauth import refresh_access_token as oauth_refresh_access_token
+from google_calendar.utils.google_oauth import (
+    refresh_access_token as oauth_refresh_access_token,
+)
 
 from .client import GoogleCalendarAPIError, GoogleCalendarHttpClient
 
@@ -317,7 +319,11 @@ class GoogleCalendarService:
     async def _ensure_access_token(self, account: Dict[str, Any]) -> str:
         access_token = account.get("access_token")
         expires_at = _parse_datetime(account.get("expires_at"))
-        if access_token and expires_at and expires_at > datetime.now(timezone.utc) + self.TOKEN_REFRESH_LEEWAY:
+        if (
+            access_token
+            and expires_at
+            and expires_at > datetime.now(timezone.utc) + self.TOKEN_REFRESH_LEEWAY
+        ):
             return access_token
         if access_token and expires_at is None:
             return access_token
@@ -370,7 +376,9 @@ class _GoogleCalendarServiceProxy:
 google_calendar_service = _GoogleCalendarServiceProxy()
 
 
-def _calculate_window(event_payload: Dict[str, Any], timezone_name: str) -> Dict[str, Any]:
+def _calculate_window(
+    event_payload: Dict[str, Any], timezone_name: str
+) -> Dict[str, Any]:
     tz = ZoneInfo(timezone_name)
     start_info = event_payload.get("start") or {}
     end_info = event_payload.get("end") or {}
@@ -400,7 +408,9 @@ def _calculate_window(event_payload: Dict[str, Any], timezone_name: str) -> Dict
     }
 
 
-def _window_from_dates(start_date: date, end_date: date, timezone_name: str) -> Dict[str, Any]:
+def _window_from_dates(
+    start_date: date, end_date: date, timezone_name: str
+) -> Dict[str, Any]:
     if end_date < start_date:
         raise GoogleCalendarUserError("end_date must be on or after start_date.")
     tz = ZoneInfo(timezone_name)
@@ -500,7 +510,9 @@ def _event_within_window(
     if end_all_day:
         end_dt = end_dt - timedelta(microseconds=1)
 
-    return start_dt >= window_start_local and end_dt <= window_end_local - timedelta(microseconds=1)
+    return start_dt >= window_start_local and end_dt <= window_end_local - timedelta(
+        microseconds=1
+    )
 
 
 def _build_event_payload(
@@ -509,7 +521,9 @@ def _build_event_payload(
     context: AccountContext,
     supabase_calendar: Dict[str, Any] | None,
 ) -> Dict[str, Any]:
-    calendar_id = calendar.get("id") or (supabase_calendar or {}).get("google_calendar_id")
+    calendar_id = calendar.get("id") or (supabase_calendar or {}).get(
+        "google_calendar_id"
+    )
     calendar_name = _resolve_calendar_name(calendar, supabase_calendar)
     calendar_color = _resolve_calendar_color(calendar, supabase_calendar)
     return {
@@ -527,7 +541,8 @@ def _build_event_payload(
         "calendar_id": calendar_id,
         "calendar_name": calendar_name,
         "calendar_color": calendar_color,
-        "is_primary": calendar.get("primary") or (supabase_calendar or {}).get("is_primary"),
+        "is_primary": calendar.get("primary")
+        or (supabase_calendar or {}).get("is_primary"),
         "raw": event,
     }
 
@@ -554,4 +569,3 @@ def _event_sort_key(payload: Dict[str, Any]) -> Tuple[int, str]:
     start = payload.get("start") or {}
     value = start.get("dateTime") or start.get("date") or ""
     return (0 if start.get("dateTime") else 1, value)
-

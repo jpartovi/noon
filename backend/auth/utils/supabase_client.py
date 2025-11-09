@@ -217,9 +217,7 @@ def delete_google_account(user_id: str, account_id: str) -> None:
         raise SupabaseStorageError(f"Failed to clear calendars: {exc.message}") from exc
 
 
-def sync_google_calendars(
-    user_id: str, calendars: Iterable[Dict[str, Any]]
-) -> None:
+def sync_google_calendars(user_id: str, calendars: Iterable[Dict[str, Any]]) -> None:
     """
     Upsert Google calendars for the user and remove stale entries.
 

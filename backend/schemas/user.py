@@ -4,7 +4,7 @@ from datetime import datetime
 
 class AuthenticatedUser(BaseModel):
     """Represents an authenticated user."""
-    
+
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
     id: str
