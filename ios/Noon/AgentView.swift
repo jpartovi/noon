@@ -173,13 +173,13 @@ struct AgentView: View {
         request.httpMethod = "POST"
         request.addValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-        let payload = AgentRequest(text: text)
+        let payload = AgentChatRequest(text: text)
         request.httpBody = try JSONEncoder().encode(payload)
         return request
     }
 }
 
-private struct AgentRequest: Encodable {
+private struct AgentChatRequest: Encodable {
     let text: String
 }
 

@@ -9,7 +9,7 @@ import SwiftUI
 
 struct CalendarsView: View {
     @StateObject private var viewModel: CalendarsViewModel
-    @StateObject private var coordinator = CalendarLinkCoordinator()
+    @StateObject private var coordinator = CalendarOAuthCoordinator()
 
     init(authViewModel: AuthViewModel, calendarService: CalendarServicing? = nil) {
         self.init(sessionProvider: authViewModel, calendarService: calendarService)

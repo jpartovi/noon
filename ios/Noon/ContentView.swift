@@ -40,7 +40,7 @@ struct ContentView: View {
             }
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    Text("Noon")
+                    Text("noon")
                         .font(.system(size: 20, weight: .semibold, design: .rounded))
                         .foregroundStyle(ColorPalette.Gradients.primary)
                 }
@@ -101,7 +101,7 @@ struct ContentView: View {
         VStack(spacing: 32) {
             Spacer()
 
-            Text("Noon")
+            Text("noon")
                 .font(.system(size: 52, weight: .bold, design: .rounded))
                 .foregroundStyle(ColorPalette.Gradients.primary)
                 .multilineTextAlignment(.center)
