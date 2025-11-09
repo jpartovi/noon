@@ -8,11 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from agent.routes import router as agent_router
-
-app.include_router(agent_router)
-
-
+from agent.routes import agent as agent_routes
 from auth.routes import auth as auth_routes
 from google_calendar.routes import google_accounts, google_calendar
 
@@ -56,6 +52,9 @@ app.include_router(auth_routes.router)
 # Google Calendar routes (authentication required via Depends(get_current_user))
 app.include_router(google_accounts.router)
 app.include_router(google_calendar.router)
+
+# Agent routes (authentication required via Depends(get_current_user))
+app.include_router(agent_routes.router)
 
 
 @app.get("/healthz")
