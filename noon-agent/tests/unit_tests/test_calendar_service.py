@@ -58,7 +58,9 @@ def test_read_events_defaults_to_primary(monkeypatch):
         calls.update(kwargs)
         return {"status": "success", "count": 0, "events": []}
 
-    monkeypatch.setattr("noon_agent.calendar_service.read_calendar_events", fake_read_calendar_events)
+    monkeypatch.setattr(
+        "noon_agent.calendar_service.read_calendar_events", fake_read_calendar_events
+    )
 
     service = CalendarService(service_factory=lambda _: object())
     service.read_events(auth_token="abc", time_min=datetime.now(timezone.utc))
