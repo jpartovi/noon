@@ -36,7 +36,18 @@ def get_current_user(
             detail="Supabase JWT secret is not configured on the server.",
         )
     try:
-        payload = jwt.decode(token, settings.supabase_jwt_secret, algorithms=["HS256"])
+        # Supabase JWTs include an 'aud' claim - skip audience validation
+        # since we trust tokens signed with our secret
+        payload = jwt.decode(
+            token,
+            settings.supabase_jwt_secret,
+            algorithms=["HS256"],
+            options={"verify_aud": False}
+        )
+    except jwt.ExpiredSignatureError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has expired") from exc
+    except jwt.InvalidSignatureError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token signature") from exc
     except jwt.PyJWTError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token"

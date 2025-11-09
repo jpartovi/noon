@@ -58,25 +58,25 @@ enum ColorPalette {
     enum Text {
         static let primary = Color(
             .displayP3,
-            red: 0.95,
-            green: 0.95,
-            blue: 0.98,
+            red: 0.08,
+            green: 0.09,
+            blue: 0.12,
             opacity: 1.0
         )
 
         static let secondary = Color(
             .displayP3,
-            red: 0.77,
-            green: 0.79,
-            blue: 0.86,
+            red: 0.37,
+            green: 0.4,
+            blue: 0.47,
             opacity: 1.0
         )
 
         static let inverted = Color(
             .displayP3,
-            red: 0.06,
-            green: 0.07,
-            blue: 0.12,
+            red: 0.95,
+            green: 0.95,
+            blue: 0.98,
             opacity: 1.0
         )
     }
@@ -84,26 +84,26 @@ enum ColorPalette {
     enum Surface {
         static let background = Color(
             .displayP3,
-            red: 0.05,
-            green: 0.06,
-            blue: 0.14,
+            red: 1.0,
+            green: 1.0,
+            blue: 1.0,
             opacity: 1.0
         )
 
         static let elevated = Color(
             .displayP3,
-            red: 0.08,
-            green: 0.09,
-            blue: 0.18,
+            red: 0.95,
+            green: 0.96,
+            blue: 0.98,
             opacity: 1.0
         )
 
         static let overlay = Color(
             .displayP3,
-            red: 0.12,
-            green: 0.13,
-            blue: 0.21,
-            opacity: 0.65
+            red: 0.86,
+            green: 0.88,
+            blue: 0.93,
+            opacity: 0.55
         )
     }
 
@@ -137,16 +137,16 @@ enum ColorPalette {
                 colors: [
                     Color(
                         .displayP3,
-                        red: 0.08,
-                        green: 0.09,
-                        blue: 0.21,
+                        red: 1.0,
+                        green: 1.0,
+                        blue: 1.0,
                         opacity: 1.0
                     ),
                     Color(
                         .displayP3,
-                        red: 0.01,
-                        green: 0.05,
-                        blue: 0.12,
+                        red: 1.0,
+                        green: 1.0,
+                        blue: 1.0,
                         opacity: 1.0
                     )
                 ]
@@ -160,16 +160,16 @@ enum ColorPalette {
                 colors: [
                     Color(
                         .displayP3,
-                        red: 0.96,
-                        green: 0.63,
-                        blue: 0.35,
-                        opacity: 0.55
+                        red: 1.0,
+                        green: 0.83,
+                        blue: 0.6,
+                        opacity: 0.35
                     ),
                     Color(
                         .displayP3,
-                        red: 0.31,
-                        green: 0.19,
-                        blue: 0.05,
+                        red: 1.0,
+                        green: 0.92,
+                        blue: 0.83,
                         opacity: 0.0
                     )
                 ]
@@ -184,16 +184,16 @@ enum ColorPalette {
                 colors: [
                     Color(
                         .displayP3,
-                        red: 0.36,
-                        green: 0.74,
-                        blue: 0.94,
-                        opacity: 0.55
+                        red: 0.77,
+                        green: 0.87,
+                        blue: 0.97,
+                        opacity: 0.35
                     ),
                     Color(
                         .displayP3,
-                        red: 0.05,
-                        green: 0.11,
-                        blue: 0.28,
+                        red: 0.9,
+                        green: 0.95,
+                        blue: 0.99,
                         opacity: 0.0
                     )
                 ]

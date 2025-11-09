@@ -10,13 +10,18 @@ import SwiftUI
 struct ContentView: View {
     @StateObject private var viewModel = AuthViewModel()
     @FocusState private var focusedField: Field?
+    @State private var navigationPath = NavigationPath()
 
     enum Field {
         case phone, code
     }
 
+    private enum Destination: Hashable {
+        case calendars
+    }
+
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             ZStack {
                 backgroundGradient
                     .ignoresSafeArea()
@@ -36,9 +41,19 @@ struct ContentView: View {
             .navigationTitle("Noon")
             .toolbar {
                 if viewModel.phase == .authenticated {
-                    ToolbarItem(placement: .navigationBarTrailing) {
+                    ToolbarItem(placement: .navigationBarLeading) {
                         Button("Sign Out") {
                             viewModel.signOut()
+                        }
+                        .foregroundStyle(ColorPalette.Text.primary)
+                    }
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button {
+                            navigationPath.append(Destination.calendars)
+                        } label: {
+                            Image(systemName: "line.3.horizontal")
+                                .imageScale(.large)
+                                .foregroundStyle(ColorPalette.Text.primary)
                         }
                     }
                 }
@@ -57,6 +72,16 @@ struct ContentView: View {
                 }
             } message: {
                 Text(viewModel.errorMessage ?? "")
+            }
+            .navigationDestination(for: Destination.self) { destination in
+                switch destination {
+                case .calendars:
+                    if let session = viewModel.session {
+                        CalendarsView(session: session)
+                    } else {
+                        calendarsUnavailableFallback
+                    }
+                }
             }
         }
     }
@@ -206,5 +231,22 @@ struct ContentView: View {
                 .blur(radius: 40)
                 .offset(x: 60, y: 90)
         }
+    }
+
+    private var calendarsUnavailableFallback: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "exclamationmark.triangle")
+                .imageScale(.large)
+                .foregroundStyle(ColorPalette.Semantic.warning)
+            Text("We couldn't load your calendars. Please sign in again.")
+                .multilineTextAlignment(.center)
+                .foregroundStyle(ColorPalette.Text.secondary)
+            Button("Sign Out") {
+                viewModel.signOut()
+            }
+            .foregroundStyle(ColorPalette.Text.primary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(ColorPalette.Surface.background.ignoresSafeArea())
     }
 }
