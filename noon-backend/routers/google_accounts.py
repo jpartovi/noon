@@ -79,7 +79,7 @@ async def google_oauth_callback(state: str, code: str) -> RedirectResponse:
             False, state, message="google_error"
         )
         return RedirectResponse(redirect_url, status_code=status.HTTP_303_SEE_OTHER)
-    except Exception as exc:  # pragma: no cover - unexpected runtime issues
+    except Exception:  # pragma: no cover - unexpected runtime issues
         logger.exception(
             "Unexpected error during Google OAuth callback for user %s", user_id
         )

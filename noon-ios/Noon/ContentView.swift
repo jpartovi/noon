@@ -94,6 +94,7 @@ struct ContentView: View {
                 }
             }
         }
+        .environmentObject(viewModel)
     }
 
     private var phoneEntry: some View {

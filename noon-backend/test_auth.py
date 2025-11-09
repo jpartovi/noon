@@ -64,7 +64,7 @@ try:
             test_token = jwt.encode(
                 test_payload, settings.supabase_jwt_secret, algorithm="HS256"
             )
-            print(f"   ✅ PASSED: Successfully signed test token")
+            print("   ✅ PASSED: Successfully signed test token")
             print(f"   → Token preview: {test_token[:50]}...")
         except Exception as e:
             print(f"   ❌ FAILED: Could not sign token: {e}")
