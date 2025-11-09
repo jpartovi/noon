@@ -18,24 +18,31 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 WS_URL = BASE_URL.replace("http://", "ws://").replace("https://", "wss://")
 CLIPS_DIR = Path(__file__).parent / "clips"
-CHUNK_SIZE = 8192  # 8KB chunks for streaming
+CHUNK_SIZE = 4096  # 4KB chunks for streaming
+
+# Optional list of custom vocabulary terms to boost during transcription tests.
+# Populate with strings (case-sensitive) e.g. ["Noon", "Deepgram", "AI"]
+CUSTOM_VOCABULARY: List[str] = []
+
+
+def get_vocab_string() -> str:
+    """Convert the custom vocabulary list into a comma-separated string."""
+    cleaned_terms = [term.strip() for term in CUSTOM_VOCABULARY if term.strip()]
+    return ",".join(cleaned_terms)
 
 
 def find_audio_files(directory: Path) -> List[Path]:
     """Find all audio files in the given directory.
     
-    Finds common audio formats including those used by Whisperflow and Deepgram.
-    Note: OpenAI API supports: mp3, mp4, mpeg, mpga, m4a, wav, webm
-    Other formats (flac, ogg, opus, etc.) will be attempted but may fail if unsupported.
+    Finds common audio formats supported by Deepgram.
+    Deepgram supports: mp3, mp4, mpeg, mpga, m4a, wav, webm, flac, ogg, opus, aac, mp2, 3gp
     """
     if not directory.exists():
         print(f"⚠️  Directory {directory} does not exist. Creating it...")
         directory.mkdir(parents=True, exist_ok=True)
         return []
     
-    # Find all common audio formats (including Whisperflow/Deepgram formats)
-    # OpenAI officially supports: mp3, mp4, mpeg, mpga, m4a, wav, webm
-    # We'll also try: flac, ogg, opus, aac, mp2 (may need conversion)
+    # Find all common audio formats supported by Deepgram
     audio_extensions = [
         "*.mp3", "*.mp4", "*.mpeg", "*.mpga", "*.m4a", "*.wav", "*.webm",
         "*.flac", "*.ogg", "*.opus", "*.aac", "*.mp2", "*.3gp"
@@ -46,15 +53,14 @@ def find_audio_files(directory: Path) -> List[Path]:
     
     if not audio_files:
         print(f"⚠️  No audio files found in {directory}")
-        print(f"   Common formats: mp3, mp4, mpeg, mpga, m4a, wav, webm, flac, ogg, opus, aac")
-        print(f"   Note: OpenAI API officially supports: mp3, mp4, mpeg, mpga, m4a, wav, webm")
+        print(f"   Common formats: mp3, mp4, mpeg, mpga, m4a, wav, webm, flac, ogg, opus, aac, mp2, 3gp")
         print(f"   Please add audio files to {directory}")
     return sorted(audio_files)
 
 
 def test_rest_endpoint(audio_file: Path) -> str:
     """
-    Test the REST API endpoint /oai/transcribe.
+    Test the REST API endpoint /v1/transcriptions.
     
     Args:
         audio_file: Path to the audio file to transcribe
@@ -66,14 +72,13 @@ def test_rest_endpoint(audio_file: Path) -> str:
     print(f"📤 REST API Test: {audio_file.name}")
     print(f"{'='*80}")
     
-    url = f"{BASE_URL}/oai/transcribe"
+    url = f"{BASE_URL}/v1/transcriptions"
     
     try:
         # Determine MIME type based on file extension
-        # Includes formats used by Whisperflow and Deepgram
+        # Deepgram supports all these formats
         ext = audio_file.suffix.lower()
         mime_types = {
-            # OpenAI officially supported
             ".mp3": "audio/mpeg",
             ".mp4": "audio/mp4",
             ".mpeg": "audio/mpeg",
@@ -81,7 +86,6 @@ def test_rest_endpoint(audio_file: Path) -> str:
             ".m4a": "audio/mp4",
             ".wav": "audio/wav",
             ".webm": "audio/webm",
-            # Additional formats (may work or may need conversion)
             ".flac": "audio/flac",
             ".ogg": "audio/ogg",
             ".opus": "audio/opus",
@@ -91,19 +95,14 @@ def test_rest_endpoint(audio_file: Path) -> str:
         }
         mime_type = mime_types.get(ext, "audio/mpeg")  # Default to mpeg
         
-        # Warn if using potentially unsupported format
-        openai_supported = {".mp3", ".mp4", ".mpeg", ".mpga", ".m4a", ".wav", ".webm"}
-        if ext not in openai_supported:
-            print(f"   ⚠️  Note: {ext} may not be officially supported by OpenAI API")
-            print(f"      The API will attempt transcription, but may return an error")
-        
         with open(audio_file, "rb") as f:
             files = {"file": (audio_file.name, f, mime_type)}
-            # Optional vocabulary (comma-separated) passed as argument if provided via env for testing
-            dg_vocab = os.getenv("DEEPGRAM_VOCABULARY", "").strip()
+            # Optional vocabulary (comma-separated) passed as argument if provided via custom list
+            dg_vocab = get_vocab_string()
             data = {}
             if dg_vocab:
                 data["vocabulary"] = dg_vocab
+                print(f"   Using vocabulary: {dg_vocab}")
             
             print(f"   Uploading {audio_file.name} ({audio_file.stat().st_size / 1024:.1f} KB)...")
             response = requests.post(url, files=files, data=data, timeout=300)
@@ -132,7 +131,7 @@ def test_rest_endpoint(audio_file: Path) -> str:
 
 async def test_websocket_endpoint(audio_file: Path) -> str:
     """
-    Test the WebSocket endpoint /oai/stream.
+    Test the WebSocket endpoint /v1/transcriptions/stream.
     
     Args:
         audio_file: Path to the audio file to transcribe
@@ -144,12 +143,20 @@ async def test_websocket_endpoint(audio_file: Path) -> str:
     print(f"🌐 WebSocket Stream Test: {audio_file.name}")
     print(f"{'='*80}")
     
-    ws_url = f"{WS_URL}/oai/stream"
+    ws_url = f"{WS_URL}/v1/transcriptions/stream"
     full_transcription = ""
     
     try:
         async with websockets.connect(ws_url) as websocket:
             print(f"   Connected to WebSocket: {ws_url}")
+            
+            # Send start command with optional vocabulary BEFORE streaming
+            start_cmd = {"action": "start"}
+            dg_vocab = get_vocab_string()
+            if dg_vocab:
+                start_cmd["vocabulary"] = dg_vocab
+                print(f"   Using vocabulary: {dg_vocab}")
+            await websocket.send(json.dumps(start_cmd))
             
             # Read and send audio file in chunks
             print(f"   Streaming audio chunks...")
@@ -166,14 +173,7 @@ async def test_websocket_endpoint(audio_file: Path) -> str:
             
             print(f"\n   Total sent: {total_sent / 1024:.1f} KB")
             
-            # Send transcribe command
-            # Send start command with optional vocabulary before streaming
-            start_cmd = {"action": "start"}
-            dg_vocab = os.getenv("DEEPGRAM_VOCABULARY", "").strip()
-            if dg_vocab:
-                start_cmd["vocabulary"] = dg_vocab
-            await websocket.send(json.dumps(start_cmd))
-            
+            # Send transcribe command (end-of-stream signal)
             command = {
                 "action": "transcribe",
                 "filename": audio_file.name
@@ -274,10 +274,12 @@ async def test_file(audio_file: Path):
         ws_norm = _normalize_text(ws_result)
         if rest_norm == ws_norm:
             print(f"Comparison:   Results match (normalized)")
+            print(f"REST final results: {rest_norm}")
+            print(f"WS final results:   {ws_norm}")
         else:
             print(f"Comparison:   Results differ")
-            print(f"REST preview: {rest_norm[:120]}")
-            print(f"WS preview:   {ws_norm[:120]}")
+            print(f"REST final results: {rest_norm}")
+            print(f"WS final results:   {ws_norm}")
     
     print(f"{'='*80}\n")
 

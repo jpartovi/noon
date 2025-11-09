@@ -31,8 +31,8 @@ app = FastAPI(
     Microservice that takes in audio and returns natural language strings using Deepgram transcription.
     
     Endpoints:
-    - REST: POST /oai/transcribe
-    - WebSocket: WS /oai/stream
+    - REST: POST /v1/transcriptions
+    - WebSocket: WS /v1/transcriptions/stream
     """,
     version="0.2.0"
 )
@@ -62,8 +62,8 @@ async def root():
         "service": "noon-v2nl",
         "provider": "deepgram",
         "endpoints": {
-            "rest": "/oai/transcribe",
-            "websocket": "/oai/stream"
+            "rest": "/v1/transcriptions",
+            "websocket": "/v1/transcriptions/stream"
         }
     }
 
@@ -73,6 +73,13 @@ def _parse_vocabulary(vocab_str: Optional[str]) -> List[str]:
         return []
     parts = [p.strip() for p in vocab_str.split(",")]
     return [p for p in parts if p]
+
+
+def _vocabulary_param_name(model_name: str) -> str:
+    """Return the Deepgram query parameter for boosted vocabulary."""
+    if model_name.lower().startswith("nova-3"):
+        return "keyterm"
+    return "keywords"
 
 
 def _guess_mime_type(filename: str) -> str:
@@ -108,7 +115,7 @@ def _extract_transcript_from_deepgram(json_payload: dict) -> str:
         return ""
 
 
-@app.post("/oai/transcribe", response_model=TranscriptionResponse)
+@app.post("/v1/transcriptions", response_model=TranscriptionResponse)
 async def transcribe_audio(
     file: UploadFile = File(...),
     vocabulary: Optional[str] = Query(None, description="Comma-separated custom vocabulary terms"),
@@ -144,9 +151,10 @@ async def transcribe_audio(
             ("punctuate", "true" if DG_PUNCTUATE else "false"),
             ("language", DG_LANGUAGE),
         ]
+        vocab_param = _vocabulary_param_name(DG_MODEL)
         for term in vocab_terms:
-            # Deepgram supports repeating keywords params
-            params.append(("keywords", term))
+            # Deepgram supports repeating vocabulary params
+            params.append((vocab_param, term))
         
         headers = {
             "Authorization": f"Token {DG_API_KEY}",
@@ -176,7 +184,7 @@ async def transcribe_audio(
         raise HTTPException(status_code=500, detail=f"Error transcribing audio: {str(e)}")
 
 
-@app.websocket("/oai/stream")
+@app.websocket("/v1/transcriptions/stream")
 async def websocket_transcribe(websocket: WebSocket):
     """
     WebSocket endpoint that proxies audio to Deepgram Live and streams back
@@ -203,6 +211,7 @@ async def websocket_transcribe(websocket: WebSocket):
     buffered_chunks: List[bytes] = []
     dg_ws = None
     final_text = ""
+    final_segments: List[str] = []
     partial_text_last_sent = ""
     upstream_closed = False
     
@@ -234,14 +243,15 @@ async def websocket_transcribe(websocket: WebSocket):
         ("punctuate", "true" if DG_PUNCTUATE else "false"),
         ("language", DG_LANGUAGE),
     ]
+    vocab_param = _vocabulary_param_name(DG_MODEL)
     for term in start_vocab:
-        query_params.append(("keywords", term))
+        query_params.append((vocab_param, term))
     dg_url = f"{dg_url_base}?{urlencode(query_params, doseq=True)}"
     
     # Forwarding functions are defined within the Deepgram connection block below
     
     async def forward_deepgram_to_client():
-        nonlocal final_text, partial_text_last_sent, dg_ws
+        nonlocal final_text, final_segments, partial_text_last_sent, dg_ws
         try:
             async for message in dg_ws:
                 # aiohttp returns WSMessage objects
@@ -266,7 +276,10 @@ async def websocket_transcribe(websocket: WebSocket):
                                 "text": transcript
                             })
                         if payload.get("is_final"):
+                            final_segments.append(transcript)
                             final_text = transcript
+                            # reset partial after finalizing a segment to avoid duplication
+                            partial_text_last_sent = ""
                 elif message.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
                     break
         except Exception as e:
@@ -305,6 +318,8 @@ async def websocket_transcribe(websocket: WebSocket):
                                 if action == "transcribe":
                                     await _send_close_stream()
                                     upstream_closed = True
+                                    # End-of-stream signaled by client; stop reading further
+                                    break
                                 elif action == "start":
                                     pass
                                 elif action == "reset":
@@ -321,12 +336,13 @@ async def websocket_transcribe(websocket: WebSocket):
                 from_dg = asyncio.create_task(forward_deepgram_to_client())
                 await to_dg
                 try:
-                    await asyncio.wait_for(from_dg, timeout=10.0)
+                    await asyncio.wait_for(from_dg, timeout=30.0)
                 except asyncio.TimeoutError:
                     pass
+                combined_text = " ".join(s.strip() for s in final_segments if s.strip()).strip()
                 await websocket.send_json({
                     "type": "transcription_complete",
-                    "text": final_text or partial_text_last_sent
+                    "text": combined_text or final_text or partial_text_last_sent
                 })
     except Exception as e:
         logger.error(f"Deepgram live websocket error: {e}", exc_info=True)
