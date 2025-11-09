@@ -5,7 +5,6 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from langgraph_sdk import get_client
 
 from schemas.user import AuthenticatedUser
-from schemas.agent_response import AgentResponse
 from dependencies import get_current_user
 from services import supabase_client
 from config import get_settings
@@ -19,7 +18,7 @@ router = APIRouter(prefix="/agent", tags=["agent"])
 transcription_service = TranscriptionService()
 
 
-@router.post("/action", response_model=AgentResponse)
+@router.post("/action")
 async def agent_action(
     file: UploadFile = File(..., description="Audio file to transcribe and process"),
     current_user: AuthenticatedUser = Depends(get_current_user),
