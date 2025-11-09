@@ -101,7 +101,9 @@ def create_calendar_event(
             logger.info(f"GCAL_WRAPPER: Added {len(attendees)} attendees: {attendees}")
 
         logger.info(f"GCAL_WRAPPER: Inserting event into calendar '{calendar_id}'...")
-        event = service.events().insert(calendarId=calendar_id, body=event_body).execute()
+        event = (
+            service.events().insert(calendarId=calendar_id, body=event_body).execute()
+        )
         logger.info(f"GCAL_WRAPPER: Event created successfully with ID: {event['id']}")
 
         return {
@@ -275,7 +277,9 @@ def update_calendar_event(
 
         # Update the event
         updated_event = (
-            service.events().update(calendarId=calendar_id, eventId=event_id, body=event).execute()
+            service.events()
+            .update(calendarId=calendar_id, eventId=event_id, body=event)
+            .execute()
         )
 
         return {
@@ -352,7 +356,9 @@ def get_event_details(
         }
 
 
-def delete_calendar_event(service, event_id: str, calendar_id: str = "primary") -> Dict[str, Any]:
+def delete_calendar_event(
+    service, event_id: str, calendar_id: str = "primary"
+) -> Dict[str, Any]:
     """
     Delete a calendar event.
 

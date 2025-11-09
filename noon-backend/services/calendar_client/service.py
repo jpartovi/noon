@@ -44,9 +44,12 @@ class CalendarService:
             return self._service_factory(auth_token)
         if self._use_token_file:
             logger.debug(
-                "CALENDAR_SERVICE: Building Google client from token file %s", self._token_path
+                "CALENDAR_SERVICE: Building Google client from token file %s",
+                self._token_path,
             )
-            return get_calendar_service_from_file(self._credentials_path, self._token_path)
+            return get_calendar_service_from_file(
+                self._credentials_path, self._token_path
+            )
         raise CalendarServiceError("No authentication token provided")
 
     @staticmethod
@@ -78,14 +81,18 @@ class CalendarService:
         context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         if not start_time or not end_time:
-            raise CalendarServiceError("start_time and end_time are required to create an event")
+            raise CalendarServiceError(
+                "start_time and end_time are required to create an event"
+            )
 
         service = self._build_service(auth_token)
         resolved_calendar_id = self._resolve_calendar_id(calendar_id, context)
         timezone = self._resolve_timezone(context)
 
         logger.info(
-            "CALENDAR_SERVICE: Creating event '%s' on calendar '%s'", summary, resolved_calendar_id
+            "CALENDAR_SERVICE: Creating event '%s' on calendar '%s'",
+            summary,
+            resolved_calendar_id,
         )
         return create_calendar_event(
             service=service,
