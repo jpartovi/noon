@@ -10,13 +10,18 @@ import SwiftUI
 struct ContentView: View {
     @StateObject private var viewModel = AuthViewModel()
     @FocusState private var focusedField: Field?
+    @State private var navigationPath = NavigationPath()
 
     enum Field {
         case phone, code
     }
 
+    private enum Destination: Hashable {
+        case calendars
+    }
+
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             ZStack {
                 backgroundGradient
                     .ignoresSafeArea()
@@ -33,16 +38,36 @@ struct ContentView: View {
                 }
                 .animation(.easeInOut, value: viewModel.phase)
             }
-            .navigationTitle("Noon")
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("Noon")
+                        .font(.system(size: 20, weight: .semibold, design: .rounded))
+                        .foregroundStyle(ColorPalette.Gradients.primary)
+                }
                 if viewModel.phase == .authenticated {
                     ToolbarItem(placement: .navigationBarTrailing) {
-                        Button("Sign Out") {
-                            viewModel.signOut()
+                        Menu {
+                            Button("Calendar Accounts") {
+                                navigationPath.append(Destination.calendars)
+                            }
+                            Button("Friends") {
+                                // Coming soon
+                            }
+                            Divider()
+                            Button(role: .destructive) {
+                                viewModel.signOut()
+                            } label: {
+                                Text("Sign Out")
+                            }
+                        } label: {
+                            Image(systemName: "line.3.horizontal")
+                                .imageScale(.large)
+                                .foregroundStyle(ColorPalette.Text.primary)
                         }
                     }
                 }
             }
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar(viewModel.phase == .authenticated ? .visible : .hidden, for: .navigationBar)
             .alert("Something went wrong", isPresented: Binding(
                 get: { viewModel.errorMessage != nil },
@@ -58,6 +83,16 @@ struct ContentView: View {
             } message: {
                 Text(viewModel.errorMessage ?? "")
             }
+            .navigationDestination(for: Destination.self) { destination in
+                switch destination {
+                case .calendars:
+                    if let session = viewModel.session {
+                        CalendarsView(session: session)
+                    } else {
+                        calendarsUnavailableFallback
+                    }
+                }
+            }
         }
     }
 
@@ -65,9 +100,9 @@ struct ContentView: View {
         VStack(spacing: 32) {
             Spacer()
 
-            Text("Welcome to Noon")
-                .font(.system(size: 42, weight: .bold, design: .rounded))
-                .foregroundStyle(ColorPalette.Text.primary)
+            Text("Noon")
+                .font(.system(size: 52, weight: .bold, design: .rounded))
+                .foregroundStyle(ColorPalette.Gradients.primary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 24)
 
@@ -76,7 +111,15 @@ struct ContentView: View {
                     .font(.headline)
                     .foregroundStyle(ColorPalette.Text.secondary)
 
-                TextField("+1 555 123 4567", text: $viewModel.phoneNumber)
+                TextField(
+                    "555 123 4567",
+                    text: Binding(
+                        get: { viewModel.phoneNumber },
+                        set: { newValue in
+                            viewModel.phoneNumber = PhoneNumberFormatter.formatDisplay(from: newValue)
+                        }
+                    )
+                )
                     .keyboardType(.phonePad)
                     .textContentType(.telephoneNumber)
                     .padding()
@@ -206,5 +249,69 @@ struct ContentView: View {
                 .blur(radius: 40)
                 .offset(x: 60, y: 90)
         }
+    }
+
+    private var calendarsUnavailableFallback: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "exclamationmark.triangle")
+                .imageScale(.large)
+                .foregroundStyle(ColorPalette.Semantic.warning)
+            Text("We couldn't load your calendars. Please sign in again.")
+                .multilineTextAlignment(.center)
+                .foregroundStyle(ColorPalette.Text.secondary)
+            Button("Sign Out") {
+                viewModel.signOut()
+            }
+            .foregroundStyle(ColorPalette.Text.primary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(ColorPalette.Surface.background.ignoresSafeArea())
+    }
+}
+
+private enum PhoneNumberFormatter {
+    static func formatDisplay(from input: String) -> String {
+        let digitsOnly = input.filter(\.isNumber)
+
+        guard digitsOnly.isEmpty == false else { return "" }
+
+        var digits = digitsOnly
+
+        if digits.count >= 11, digits.hasPrefix("1") {
+            digits = String(digits.dropFirst())
+        }
+
+        if digits.count > 10 {
+            digits = String(digits.prefix(10))
+        }
+
+        let area = String(digits.prefix(3))
+        let middle = String(digits.dropFirst(min(3, digits.count)).prefix(3))
+        let last = String(digits.dropFirst(min(6, digits.count)))
+
+        var formatted = ""
+
+        if area.isEmpty == false {
+            formatted += "(\(area)"
+            if area.count == 3 {
+                formatted += ")"
+                if digits.count > 3 {
+                    formatted += " "
+                }
+            }
+        }
+
+        if middle.isEmpty == false {
+            formatted += middle
+            if middle.count == 3, last.isEmpty == false {
+                formatted += " - "
+            }
+        }
+
+        if last.isEmpty == false {
+            formatted += last
+        }
+
+        return formatted
     }
 }

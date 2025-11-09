@@ -37,6 +37,10 @@ def _model_dump(obj: Any) -> Dict[str, Any]:
     return obj.__dict__  # type: ignore[attr-defined]
 
 
+def _without_none(data: Dict[str, Any]) -> Dict[str, Any]:
+    return {key: value for key, value in data.items() if value is not None}
+
+
 def send_phone_otp(phone: str) -> None:
     client = get_service_client()
     try:
@@ -48,7 +52,9 @@ def send_phone_otp(phone: str) -> None:
 def verify_phone_otp(phone: str, token: str) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     client = get_service_client()
     try:
-        response = client.auth.verify_otp({"phone": phone, "token": token, "type": "sms"})
+        response = client.auth.verify_otp(
+            {"phone": phone, "token": token, "type": "sms"}
+        )
     except Exception as exc:  # pragma: no cover
         raise SupabaseAuthError(str(exc)) from exc
 
@@ -78,7 +84,9 @@ def ensure_user_profile(user: Dict[str, Any], phone: str) -> Dict[str, Any]:
 def list_google_accounts(user_id: str) -> List[Dict[str, Any]]:
     client = get_service_client()
     try:
-        result = client.table("google_accounts").select("*").eq("user_id", user_id).execute()
+        result = (
+            client.table("google_accounts").select("*").eq("user_id", user_id).execute()
+        )
     except APIError as exc:
         raise SupabaseStorageError(exc.message) from exc
     return result.data or []
@@ -86,23 +94,52 @@ def list_google_accounts(user_id: str) -> List[Dict[str, Any]]:
 
 def upsert_google_account(user_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
     client = get_service_client()
-    payload = {"user_id": user_id, **data}
+    payload = _without_none({"user_id": user_id, **data})
     try:
-        result = client.table("google_accounts").upsert(payload, on_conflict="user_id,google_user_id").execute()
+        result = (
+            client.table("google_accounts")
+            .upsert(payload, on_conflict="user_id,google_user_id")
+            .execute()
+        )
     except APIError as exc:
         raise SupabaseStorageError(exc.message) from exc
     if not result.data:
-        raise SupabaseStorageError("Supabase did not return inserted google account data.")
+        raise SupabaseStorageError(
+            "Supabase did not return inserted google account data."
+        )
+    return result.data[0]
+
+
+def update_google_account(user_id: str, account_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    client = get_service_client()
+    payload = _without_none(data)
+    try:
+        result = (
+            client.table("google_accounts")
+            .update(payload)
+            .eq("user_id", user_id)
+            .eq("id", account_id)
+            .execute()
+        )
+    except APIError as exc:
+        raise SupabaseStorageError(exc.message) from exc
+    if not result.data:
+        raise SupabaseStorageError("Google account not found or update failed.")
     return result.data[0]
 
 
 def delete_google_account(user_id: str, account_id: str) -> None:
     client = get_service_client()
     try:
-        response = client.table("google_accounts").delete().eq("user_id", user_id).eq("id", account_id).execute()
+        response = (
+            client.table("google_accounts")
+            .delete()
+            .eq("user_id", user_id)
+            .eq("id", account_id)
+            .execute()
+        )
     except APIError as exc:
         raise SupabaseStorageError(exc.message) from exc
 
     if not response.data:
         raise SupabaseStorageError("Google account not found or already removed.")
-

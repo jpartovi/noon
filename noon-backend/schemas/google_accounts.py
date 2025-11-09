@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, HttpUrl
 
 
 class GoogleAccountBase(BaseModel):
@@ -35,4 +35,10 @@ class GoogleAccountResponse(GoogleAccountBase):
     user_id: str
     created_at: datetime
     updated_at: datetime
+
+
+class GoogleOAuthStartResponse(BaseModel):
+    authorization_url: HttpUrl
+    state: str = Field(..., min_length=10)
+    state_expires_at: datetime
 

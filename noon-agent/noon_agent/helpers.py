@@ -1,15 +1,20 @@
 """Helper utilities for Noon agent."""
 
+import logging
+
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_openai import ChatOpenAI
 from datetime import datetime
 
 from .schemas import ParsedIntent
-from .constants import friends
+from .constants import friends, self
+
+logger = logging.getLogger(__name__)
 
 
 def build_intent_parser(model: str = "gpt-4o-mini", temperature: float = 0.2):
     """Return a runnable that turns chat history into a ParsedIntent."""
+    logger.info(f"HELPERS: Building intent parser with model={model}, temperature={temperature}")
 
     # Build friends context for the prompt
     friends_context = "\n\nKnown friends and their emails:\n"
