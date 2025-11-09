@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 WS_URL = BASE_URL.replace("http://", "ws://").replace("https://", "wss://")
 CLIPS_DIR = Path(__file__).parent / "clips"
-CHUNK_SIZE = 8192  # 8KB chunks for streaming
+CHUNK_SIZE = 4096  # 4KB chunks for streaming
 
 # Optional list of custom vocabulary terms to boost during transcription tests.
 # Populate with strings (case-sensitive) e.g. ["Noon", "Deepgram", "AI"]
