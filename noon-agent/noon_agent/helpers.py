@@ -1,13 +1,14 @@
 """Helper utilities for Noon agent."""
 
 import logging
+import random
 
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_openai import ChatOpenAI
+from langchain.chat_models import init_chat_model
 from datetime import datetime
 
 from .schemas import ParsedIntent
-from .constants import friends, self
+from .constants import friends, self, coffee_shops, restaurants
 
 logger = logging.getLogger(__name__)
 
@@ -17,41 +18,105 @@ def build_intent_parser(model: str = "gpt-4o-mini", temperature: float = 0.2):
     logger.info(f"HELPERS: Building intent parser with model={model}, temperature={temperature}")
 
     # Build friends context for the prompt
-    friends_context = "\n\nKnown friends and their emails:\n"
+    friends_context = "Known friends and their emails:\n"
     for name, email in friends.items():
-        friends_context += f"- {name}: {email}\n"
-    friends_context += (
-        "\nWhen a friend's name is mentioned, use their email address in the people list."
-    )
-    # The new, enhanced system prompt string
-    system_prompt = f"""
-    You are an expert scheduling assistant. Your task is to extract the user's scheduling intent into a single, precise JSON object.
+        friends_context += f"  - {name}: {email}\n"
 
-    **Context:**
-    * **Current Time:** {datetime.now().replace(microsecond=0).isoformat() + "Z"}
-    * **User's Time Zone:** {{user_timezone}}
-    * **Known Contacts:** {friends_context}
+    # Build venue lists for location inference
+    coffee_list = "\n".join([f"  - {shop}" for shop in coffee_shops])
+    restaurant_list = "\n".join([f"  - {shop}" for shop in restaurants])
 
-    **JSON Output Rules:**
-    1.  **Format:** Output a single JSON object with *exactly* these keys: `action`, `start_time`, `end_time`, `location`, `people`, `name`, `auth_provider`, `auth_token`, `summary`.
-    2.  **Missing Values:** Set any missing or unknown values to `null`.
-    3.  **Action Key:** `action` is mandatory. It *must* be one of: `create`, `delete`, `update`, `read`.
-    4.  **Fallback:** If the user's message is ambiguous or clearly not a scheduling request (e.g., 'Hello', 'What's the weather?'), set `action` to `null` along with all other fields.
+    system_prompt = f"""You are an expert scheduling assistant. Extract the user's scheduling intent into a structured JSON object.
 
-    **Field-Specific Rules:**
-    1.  **Datetimes (`start_time`, `end_time`):**
-        * **Format:** Must be in ISO 8601 UTC format (e.g., `2025-01-31T14:00:00Z`).
-        * **Inference:** Use the `{current_datetime}` and `{user_timezone}` to resolve all relative times (e.g., 'tomorrow at 10 AM', 'in 2 hours', 'next Friday').
-        * **Year:** Infer the correct year based on the `{current_datetime}`. Assume dates mentioned without a year (e.g., 'May 10th') refer to the *next* upcoming instance of that date.
+**TIMEZONE:** All times are in PST (America/Los_Angeles timezone). Convert all times to PST before outputting.
 
-    2.  **People:**
-        * **Format:** Must be a list of strings (e.g., `['bob@example.com']`, `['Alice', 'Bob']`).
-        * **Context:** Use the `{friends_context}` to resolve ambiguous names (e.g., 'Bob') to their full names or emails if possible.
+**CURRENT TIME:** {datetime.now().replace(microsecond=0).isoformat()}
 
-    3.  **Summary vs. Name:**
-        * **Summary:** Use this for the event's main title or description (e.g., 'Dentist Appointment', 'Lunch with team').
-        * **Name:** Use this *only* when the user is trying to identify an *existing* event, typically for `update` or `delete` actions (e.g., 'delete my meeting named **Budget Review**'). For `create` actions, this should usually be `null`.
-    """
+**OUTPUT SCHEMA:**
+You must return a JSON object with these exact fields:
+- action: REQUIRED - one of: "create", "delete", "update", "read"
+- start_time: REQUIRED for create action - ISO 8601 datetime in PST (e.g., "2025-01-31T14:00:00-08:00")
+- end_time: REQUIRED for create action - ISO 8601 datetime in PST (e.g., "2025-01-31T15:00:00-08:00")
+- location: Optional - string for event location/venue
+- people: Optional - list of email addresses or names (e.g., ["jude@example.com", "Alice"])
+- name: Optional - only for identifying existing events in update/delete actions
+- summary: Optional - event title/description (e.g., "Coffee with Jude", "Team lunch")
+- auth_provider: Optional - leave null (handled elsewhere)
+- auth_token: Optional - leave null (handled elsewhere)
+
+**CRITICAL RULES:**
+1. **NEVER leave start_time or end_time as null for create actions** - you MUST infer reasonable values
+2. All datetime values MUST be in PST timezone with "-08:00" suffix
+3. When a friend's name is mentioned, use their email from the known contacts list
+
+{friends_context}
+
+**SMART TIME INFERENCE:**
+When the user doesn't specify end_time, infer it based on the event type:
+- Coffee/coffee meetings: 1 hour duration (e.g., "3pm" → start: 3pm, end: 4pm)
+- Lunch: 1.5 hour duration, default start at 12:00pm if not specified
+- Dinner: 2 hour duration, default start at 7:00pm if not specified
+- Generic meetings: 1 hour duration
+- If only start time given: add appropriate duration based on event type
+
+**TIME PARSING EXAMPLES:**
+- "lunch tomorrow" → start: tomorrow at 12:00pm PST, end: tomorrow at 1:30pm PST
+- "coffee at 3pm" → start: today at 3:00pm PST, end: today at 4:00pm PST
+- "dinner Friday" → start: next Friday at 7:00pm PST, end: next Friday at 9:00pm PST
+- "meeting at 2pm" → start: today at 2:00pm PST, end: today at 3:00pm PST
+
+**SMART LOCATION INFERENCE:**
+When event type suggests a venue but no location given, randomly choose from these San Francisco locations:
+
+Coffee shops (for "coffee", "catch up over coffee", etc.):
+{coffee_list}
+
+Restaurants (for "lunch", "dinner", "brunch", "eat", etc.):
+{restaurant_list}
+
+**EXAMPLES:**
+
+User: "Schedule lunch with jude tomorrow"
+Output:
+{{{{
+  "action": "create",
+  "start_time": "2025-01-09T12:00:00-08:00",
+  "end_time": "2025-01-09T13:30:00-08:00",
+  "location": "Tartine Bakery (Mission)",
+  "people": ["jude@partovi.org"],
+  "name": null,
+  "summary": "Lunch with jude",
+  "auth_provider": null,
+  "auth_token": null
+}}}}
+
+User: "Coffee with anika at 3pm on Friday"
+Output:
+{{{{
+  "action": "create",
+  "start_time": "2025-01-10T15:00:00-08:00",
+  "end_time": "2025-01-10T16:00:00-08:00",
+  "location": "Blue Bottle Coffee (Hayes Valley)",
+  "people": ["anika.somaia@columbia.edu"],
+  "name": null,
+  "summary": "Coffee with anika",
+  "auth_provider": null,
+  "auth_token": null
+}}}}
+
+User: "Delete my team standup"
+Output:
+{{{{
+  "action": "delete",
+  "start_time": null,
+  "end_time": null,
+  "location": null,
+  "people": null,
+  "name": "team standup",
+  "summary": null,
+  "auth_provider": null,
+  "auth_token": null
+}}}}"""
 
     # Create the final prompt template
     prompt = ChatPromptTemplate.from_messages(
@@ -61,7 +126,7 @@ def build_intent_parser(model: str = "gpt-4o-mini", temperature: float = 0.2):
         ]
     )
 
-    llm = ChatOpenAI(model=model, temperature=temperature)
+    llm = init_chat_model(model=model, temperature=temperature)
     structured_llm = llm.with_structured_output(ParsedIntent)
 
     return prompt | structured_llm
