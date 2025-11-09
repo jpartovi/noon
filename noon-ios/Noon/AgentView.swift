@@ -13,15 +13,21 @@ struct AgentView: View {
             ColorPalette.Gradients.backgroundBase
                 .ignoresSafeArea()
 
-            VStack(spacing: 24) {
-                Spacer()
-
-                Spacer(minLength: 160)
+            VStack(spacing: 0) {
+                ScheduleView(date: Date())
+                    .padding(.horizontal, 24)
+                    .padding(.top, 0)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        .safeAreaInset(edge: .bottom) {
-            microphoneButton
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: 0) {
+                Color.clear
+                    .frame(height: 24)
+
+                microphoneButton
+            }
         }
     }
 
@@ -46,7 +52,7 @@ struct AgentView: View {
                 .frame(maxWidth: .infinity)
         }
         .buttonStyle(.plain)
-        .padding(.bottom, 60)
+        .padding(.bottom, 20)
     }
 }
 
