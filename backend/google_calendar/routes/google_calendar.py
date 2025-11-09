@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from dependencies import AuthenticatedUser, get_current_user
 from schemas import google_calendar as schema
-from services.google_calendar import (
+from google_calendar.utils.google_calendar import (
     GoogleCalendarAuthError,
     GoogleCalendarEventNotFoundError,
     GoogleCalendarServiceError,

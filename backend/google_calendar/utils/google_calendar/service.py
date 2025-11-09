@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 from fastapi import status
 
 from services import supabase_client
-from services.google_oauth import refresh_access_token as oauth_refresh_access_token
+from google_calendar.utils.google_oauth import refresh_access_token as oauth_refresh_access_token
 
 from .client import GoogleCalendarAPIError, GoogleCalendarHttpClient
 

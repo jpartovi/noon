@@ -10,7 +10,6 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from auth.routes import auth as auth_routes
 from google_calendar.routes import google_accounts, google_calendar
-from middleware.request_logging import RequestLoggingMiddleware
 
 # Configure logging
 logging.basicConfig(
@@ -45,9 +44,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Add request logging middleware
-app.add_middleware(RequestLoggingMiddleware)
-
 # Include routers
 # Auth routes (no authentication required)
 app.include_router(auth_routes.router)
@@ -71,3 +67,8 @@ async def root():
         "version": "0.1.0",
         "docs": "/docs",
     }
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
