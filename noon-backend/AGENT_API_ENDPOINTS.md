@@ -44,14 +44,18 @@ Content-Type: application/json
 ```json
 {
   "tool": "create",
-  "summary": "Created event: Meeting at 2024-01-15T14:00:00",
+  "summary": "Prepare to create 'Team Meeting'",
   "result": {
-    "status": "success",
-    "event_id": "abc123xyz",
-    "summary": "Meeting",
-    "start": "2024-01-15T14:00:00",
-    "end": "2024-01-15T15:00:00",
-    "link": "https://www.google.com/calendar/event?eid=..."
+    "tool": "create",
+    "summary": "Team Meeting",
+    "start_time": "2024-01-15T14:00:00-08:00",
+    "end_time": "2024-01-15T15:00:00-08:00",
+    "attendees": ["alice@example.com", "bob@example.com"],
+    "location": "Zoom",
+    "metadata": {
+      "intent": "create",
+      "source": "agent"
+    }
   },
   "success": true
 }
@@ -64,6 +68,36 @@ Content-Type: application/json
   summary: string;
   result: object | null;
   success: boolean;
+}
+```
+
+**Instruction-only mode**
+
+The agent now returns structured *instructions* instead of touching Google Calendar directly. Frontends can inspect `result.tool` to decide what to do next:
+
+- `show`: contains event query info (event id, calendar id, optional filters) for fetching details.
+- `show-schedule`: includes the requested start/end days for building an overlay view.
+- `create`: includes the full event draft (summary, time range, attendees, location, metadata).
+- `update`: includes `id`, `calendar`, and a `changes` dict describing the requested mutations.
+- `delete`: includes `id` and `calendar` identifying what to remove.
+
+Example `update` response:
+
+```json
+{
+  "tool": "update",
+  "summary": "Prepare to update event abc123",
+  "result": {
+    "tool": "update",
+    "id": "abc123",
+    "calendar": "primary",
+    "changes": {
+      "start_time": "2024-01-15T16:00:00-08:00",
+      "end_time": "2024-01-15T17:00:00-08:00",
+      "location": "Conference Room A"
+    }
+  },
+  "success": true
 }
 ```
 
@@ -424,4 +458,3 @@ console.log(result.success);   // true
 - All operations require a linked Google Calendar account
 - The `result` field contains structured data specific to each operation type
 - See `AGENT_API_RESPONSE_TYPES.md` for detailed response structures
-
