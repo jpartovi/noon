@@ -7,7 +7,7 @@ from enum import Enum
 from typing import List, Literal, Optional, Union
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, EmailStr, Field, validator
+from pydantic import BaseModel, EmailStr, Field, validator, root_validator
 
 try:
 	from openai import OpenAI  # type: ignore
@@ -16,6 +16,9 @@ except Exception:
 	_OPENAI_AVAILABLE = False
 	OpenAI = None  # type: ignore
 
+
+from dotenv import load_dotenv
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 app = FastAPI(title="Noon Calendar Agent Arg Planner", version="0.1.0")
 
@@ -75,8 +78,8 @@ class ListEventsArgs(BaseModel):
 	calendarId: str = Field("primary", description="Calendar ID like 'primary' or a specific ID")
 	timeMin: Optional[datetime] = Field(None, description="RFC3339 lower bound for event start time")
 	timeMax: Optional[datetime] = Field(None, description="RFC3339 upper bound for event start time")
-	orderBy: Optional[Literal["startTime", "updated"]] = None
 	singleEvents: Optional[bool] = None
+	orderBy: Optional[Literal["startTime", "updated"]] = None
 	maxResults: Optional[int] = Field(None, ge=1, le=2500)
 	pageToken: Optional[str] = None
 	q: Optional[str] = Field(None, description="Free-text search")
@@ -84,10 +87,20 @@ class ListEventsArgs(BaseModel):
 	timeZone: Optional[str] = None
 
 	@validator("orderBy")
-	def validate_order_by_requires_single_events(cls, v, values):  # noqa: N805
-		if v == "startTime" and not values.get("singleEvents"):
-			raise ValueError("orderBy='startTime' requires singleEvents=True")
+	def validate_order_by_value(cls, v):  # noqa: N805
 		return v
+
+	@validator("singleEvents")
+	def validate_single_events_value(cls, v):  # noqa: N805
+		return v
+
+	@root_validator
+	def _ensure_order_single_events_consistency(cls, values: dict) -> dict:  # noqa: N805
+		order_by = values.get("orderBy")
+		single_events = values.get("singleEvents")
+		if order_by == "startTime" and single_events is not True:
+			raise ValueError("orderBy='startTime' requires singleEvents=True")
+		return values
 
 
 # Get Event (GET /calendars/{calendarId}/events/{eventId})
@@ -240,6 +253,24 @@ def _simple_rule_based_plan(req: ParseArgsRequest) -> CalendarAgentPlan:
 		end = start + timedelta(days=1)
 		return start, end
 
+	# Explicit no-op intents
+	if any(
+		phrase in text
+		for phrase in [
+			"do nothing",
+			"no-op",
+			"no op",
+			"no change",
+			"ignore",
+			"never mind",
+			"nevermind",
+			"cancel that",
+			"cancel",
+			"nothing",
+		]
+	):
+		return CalendarAgentPlan(model="rule-based", operations=[], reasoning="No action requested")
+
 	# List schedule today/tomorrow/this week
 	if any(k in text for k in ["what's on", "whats on", "agenda", "schedule", "show events", "list events", "what do i have"]):
 		time_min: Optional[datetime] = None
@@ -260,7 +291,7 @@ def _simple_rule_based_plan(req: ParseArgsRequest) -> CalendarAgentPlan:
 				timeMin=time_min,
 				timeMax=time_max,
 				singleEvents=True,
-				orderBy="startTime" if (time_min or time_max) else None,
+				orderBy=None,
 				maxResults=50,
 				timeZone=req.timeZone,
 			),
@@ -278,12 +309,16 @@ def _simple_rule_based_plan(req: ParseArgsRequest) -> CalendarAgentPlan:
 
 	# If nothing matched, default to a broad list
 	if not ops:
-		ops.append(
-			ListEventsOperation(
-				op=OperationName.list_events,
-				args=ListEventsArgs(calendarId=calendar_id, q=req.query, singleEvents=True, maxResults=25, timeZone=req.timeZone),
+		# If user explicitly indicates no intention inferred, return no-op; else broad search
+		if any(p in text for p in ["no intent", "no action", "none"]):
+			return CalendarAgentPlan(model="rule-based", operations=[], reasoning="No actionable intent recognized")
+		else:
+			ops.append(
+				ListEventsOperation(
+					op=OperationName.list_events,
+					args=ListEventsArgs(calendarId=calendar_id, q=req.query, singleEvents=True, maxResults=25, timeZone=req.timeZone),
+				)
 			)
-		)
 
 	return CalendarAgentPlan(model="rule-based", operations=ops, reasoning="Rule-based fallback applied")
 
@@ -300,20 +335,21 @@ def _llm_plan(req: ParseArgsRequest) -> CalendarAgentPlan:
 	if not api_key:
 		raise RuntimeError("OPENAI_API_KEY not set")
 
-	model = req.model or os.getenv("OPENAI_MODEL", "gpt-5")
+	# Use a snapshot that supports Structured Outputs
+	model = req.model or os.getenv("OPENAI_MODEL", "gpt-4.1")
 	client = OpenAI(api_key=api_key)
 
-	schema = _pydantic_schema_for_plan()
 	now = (req.now or _default_now_utc()).isoformat()
 
 	# System and user prompts engineered for structured decision-making.
 	system_prompt = (
 		"You are a calendar planning assistant that translates natural language into Google Calendar API operations. "
-		"Always return a STRICT JSON object that conforms to the provided JSON schema. "
-		"Choose one or more operations to fully satisfy the user's intent. "
+		"Always respond with structured data that conforms to the provided Pydantic model. "
+		"Choose zero or more operations to fully satisfy the user's intent. "
 		"Prefer minimal sets of operations; ensure required arguments are present and valid. "
+		"If no action is required, return an empty 'operations' array with a concise 'reasoning'. "
 		"All datetimes must be RFC3339 with timezone offsets. "
-		"Never include extraneous fields."
+		"Never include extraneous fields beyond the model definition."
 	)
 
 	user_prompt = (
@@ -325,37 +361,29 @@ def _llm_plan(req: ParseArgsRequest) -> CalendarAgentPlan:
 		"Return operations in execution order. If ambiguous, choose the most probable interpretation and add a short 'reasoning'."
 	)
 
-	# Use Responses API with JSON schema structured output
-	resp = client.responses.create(
-		model=model,
-		inputs=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
-		response_format={
-			"type": "json_schema",
-			"json_schema": {"name": "CalendarAgentPlan", "schema": schema, "strict": True},
-		},
-	)
-
-	# Extract JSON text from outputs
+	# Use Responses API with Structured Outputs via Pydantic parsing
 	try:
-		output_items = getattr(resp, "output", None) or getattr(resp, "outputs", None)  # handle different SDK variants
-		if not output_items:
-			raise ValueError("No outputs from LLM")
-		first = output_items[0]
-		content = first.get("content") if isinstance(first, dict) else getattr(first, "content", None)
-		if not content:
-			raise ValueError("Empty content from LLM")
-		# content is typically a list with a single text item
-		text_item = content[0]
-		text = text_item.get("text") if isinstance(text_item, dict) else getattr(text_item, "text", None)
-		if not text:
-			raise ValueError("No text in LLM content")
-		data = json.loads(text)
-	except Exception as e:
-		raise RuntimeError(f"Failed to parse structured output: {e}") from e
+		resp = client.responses.parse(
+			model=model,
+			input=[
+				{"role": "system", "content": system_prompt},
+				{"role": "user", "content": user_prompt},
+			],
+			text_format=CalendarAgentPlan,
+		)
+	except TypeError:
+		# Backward-compatibility shim for older SDKs that may use a different method name.
+		# If parse is not available, fall back to create + manual parsing of output_text.
+		raise RuntimeError("Installed openai SDK does not support responses.parse with text_format; please upgrade the SDK.")
 
-	# Validate and coerce to Pydantic model
-	plan = CalendarAgentPlan.parse_obj(data)
-	return plan
+	if getattr(resp, "refusal", None):
+		# If the model refused, return an empty plan with reasoning.
+		return CalendarAgentPlan(model=model, operations=[], reasoning=str(resp.refusal))
+
+	parsed = getattr(resp, "output_parsed", None)
+	if parsed is None:
+		raise RuntimeError("No parsed output returned from OpenAI Responses API")
+	return parsed
 
 
 # ---------------------------
@@ -372,20 +400,13 @@ def get_calendar_args(req: ParseArgsRequest):
 	"""
 	Accepts a natural language instruction and returns a structured plan
 	(a list of Google Calendar operations with validated arguments).
-	Attempts LLM structured parsing first; falls back to a rule-based plan.
+	Uses only the LLM structured parsing path.
 	"""
-	try:
-		plan = _llm_plan(req)
-		# Trim operations list if needed
-		if req.maxOperations and len(plan.operations) > req.maxOperations:
-			plan.operations = plan.operations[: req.maxOperations]
-		return plan
-	except Exception:
-		# Fallback path
-		fallback = _simple_rule_based_plan(req)
-		if req.maxOperations and len(fallback.operations) > req.maxOperations:
-			fallback.operations = fallback.operations[: req.maxOperations]
-		return fallback
+	plan = _llm_plan(req)
+	# Trim operations list if needed
+	if req.maxOperations and len(plan.operations) > req.maxOperations:
+		plan.operations = plan.operations[: req.maxOperations]
+	return plan
 
 
 if __name__ == "__main__":
