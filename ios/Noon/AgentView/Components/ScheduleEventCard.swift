@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 struct ScheduleEventCard: View {
     enum Style {
@@ -24,7 +25,7 @@ struct ScheduleEventCard: View {
     private var backgroundStyle: AnyShapeStyle {
         switch style {
         case .standard:
-            return AnyShapeStyle(ColorPalette.Surface.overlay.opacity(0.92))
+            return AnyShapeStyle(ColorPalette.Surface.overlay)
         case .highlight, .update:
             return AnyShapeStyle(
                 ColorPalette.Semantic.highlightBackground
@@ -46,24 +47,40 @@ struct ScheduleEventCard: View {
     }
 
     var body: some View {
-        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            .fill(backgroundStyle)
-            .overlay(alignment: .leading) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(textColor)
-                        .strikethrough(style == .destructive, color: strikeColor)
-                    if showTimeRange {
-                        Text(timeRange)
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(secondaryTextColor)
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+
+        shape
+            .fill(ColorPalette.Surface.background)
+            .overlay {
+                shape.fill(backgroundStyle)
+            }
+            .overlay(alignment: .topLeading) {
+                GeometryReader { proxy in
+                    let metrics = contentMetrics(for: proxy.size.height)
+
+                    VStack(alignment: .leading, spacing: metrics.spacing) {
+                        Text(title)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(textColor)
                             .strikethrough(style == .destructive, color: strikeColor)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
+
+                        if metrics.shouldShowTime {
+                            Text(timeRange)
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(secondaryTextColor)
+                                .strikethrough(style == .destructive, color: strikeColor)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.85)
+                        }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, metrics.horizontalPadding)
+                    .padding(.top, metrics.topPadding)
+                    .padding(.bottom, metrics.bottomPadding)
+                    .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
             }
             .overlay { borderOverlay }
             .shadow(color: shadowColor, radius: 14, x: 0, y: 10)
@@ -71,6 +88,14 @@ struct ScheduleEventCard: View {
 }
 
 private extension ScheduleEventCard {
+    struct ContentMetrics {
+        let topPadding: CGFloat
+        let bottomPadding: CGFloat
+        let horizontalPadding: CGFloat
+        let spacing: CGFloat
+        let shouldShowTime: Bool
+    }
+
     var textColor: Color {
         switch style {
         case .standard, .highlight, .update:
@@ -113,6 +138,44 @@ private extension ScheduleEventCard {
         case .destructive:
             shape.stroke(ColorPalette.Text.secondary.opacity(0.6), lineWidth: 1)
         }
+    }
+
+    func contentMetrics(for availableHeight: CGFloat) -> ContentMetrics {
+        let baseHorizontalPadding: CGFloat = 12
+        let baseVerticalPadding: CGFloat = 8
+        let baseSpacing: CGFloat = 4
+
+        let titleLineHeight = UIFont.preferredFont(forTextStyle: .caption1).lineHeight
+        let timeLineHeight = UIFont.preferredFont(forTextStyle: .caption1).lineHeight
+
+        let canShowTimeInitially = showTimeRange
+        let contentHeightWithTime = titleLineHeight + baseSpacing + timeLineHeight
+
+        let shouldShowTime = canShowTimeInitially && contentHeightWithTime <= availableHeight
+        let spacing = shouldShowTime ? baseSpacing : 0
+        let contentHeight = titleLineHeight + (shouldShowTime ? spacing + timeLineHeight : 0)
+
+        let remainingHeight = availableHeight - contentHeight
+
+        let topPadding: CGFloat
+        let bottomPadding: CGFloat
+
+        if remainingHeight <= (baseVerticalPadding * 2) {
+            let equalPadding = max(remainingHeight / 2, 0)
+            topPadding = equalPadding
+            bottomPadding = equalPadding
+        } else {
+            topPadding = baseVerticalPadding
+            bottomPadding = remainingHeight - baseVerticalPadding
+        }
+
+        return ContentMetrics(
+            topPadding: topPadding,
+            bottomPadding: bottomPadding,
+            horizontalPadding: baseHorizontalPadding,
+            spacing: spacing,
+            shouldShowTime: shouldShowTime
+        )
     }
 }
 

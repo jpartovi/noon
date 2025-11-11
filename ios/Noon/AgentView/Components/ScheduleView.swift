@@ -67,8 +67,7 @@ struct ScheduleView: View {
         labelWidth: CGFloat,
         labelSpacing: CGFloat
     ) -> some View {
-        let eventHorizontalInset: CGFloat = 12
-        let cornerRadius: CGFloat = 12
+        let cornerRadius: CGFloat = 8
 
         let content = ZStack(alignment: .topLeading) {
             Canvas { context, _ in
@@ -107,7 +106,7 @@ struct ScheduleView: View {
                     let eventHeight = hourHeight * CGFloat(layout.durationHours)
                     let topPosition = timelineTopInset + hourHeight * CGFloat(layout.startHour)
                     let centerY = topPosition + eventHeight / 2
-                    let eventWidth = max(gridWidth - eventHorizontalInset * 2, 0)
+                    let eventWidth = gridWidth
                     let centerX = gridLeading + gridWidth / 2
 
                     ScheduleEventCard(
