@@ -1,5 +1,5 @@
 //
-//  AgentRequest.swift
+//  AgentResponse.swift
 //  Noon
 //
 //  Created by GPT-5 Codex on 11/9/25.
@@ -7,7 +7,7 @@
 
 import Foundation
 
-enum AgentRequestKind: String, Codable, Sendable {
+enum AgentResponseKind: String, Codable, Sendable {
     case showEvent = "show-event"
     case showSchedule = "show-schedule"
     case createEvent = "create-event"
@@ -16,72 +16,72 @@ enum AgentRequestKind: String, Codable, Sendable {
     case noAction = "no-action"
 }
 
-@preconcurrency protocol AgentSuccessRequest: Sendable {
+@preconcurrency protocol AgentSuccessResponse: Sendable {
     associatedtype Metadata: Sendable
     var success: Bool { get }
-    var request: AgentRequestKind { get }
+    var request: AgentResponseKind { get }
     var metadata: Metadata { get }
 }
 
-struct AgentRequestError: Codable, Sendable, Error {
+struct AgentErrorResponse: Codable, Sendable, Error {
     let success: Bool
-    let message: String?
+    let message: String
 
-    init(message: String?) {
+    init(message: String) {
         self.success = false
         self.message = message
     }
 }
 
-enum AgentRequest: Codable, Sendable {
-    case showEvent(ShowEventRequest)
-    case showSchedule(ShowScheduleRequest)
-    case createEvent(CreateEventRequest)
-    case updateEvent(UpdateEventRequest)
-    case deleteEvent(DeleteEventRequest)
-    case noAction(NothingRequest)
-    case failure(AgentRequestError)
+enum AgentResponse: Codable, Sendable {
+    case showEvent(ShowEventResponse)
+    case showSchedule(ShowScheduleResponse)
+    case createEvent(CreateEventResponse)
+    case updateEvent(UpdateEventResponse)
+    case deleteEvent(DeleteEventResponse)
+    case noAction(NoActionResponse)
+    case error(AgentErrorResponse)
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let success = try container.decode(Bool.self, forKey: .success)
 
         if success {
-            let kind = try container.decode(AgentRequestKind.self, forKey: .request)
+            let kind = try container.decode(AgentResponseKind.self, forKey: .request)
             switch kind {
             case .showEvent:
-                self = .showEvent(try ShowEventRequest(from: decoder))
+                self = .showEvent(try ShowEventResponse(from: decoder))
             case .showSchedule:
-                self = .showSchedule(try ShowScheduleRequest(from: decoder))
+                self = .showSchedule(try ShowScheduleResponse(from: decoder))
             case .createEvent:
-                self = .createEvent(try CreateEventRequest(from: decoder))
+                self = .createEvent(try CreateEventResponse(from: decoder))
             case .updateEvent:
-                self = .updateEvent(try UpdateEventRequest(from: decoder))
+                self = .updateEvent(try UpdateEventResponse(from: decoder))
             case .deleteEvent:
-                self = .deleteEvent(try DeleteEventRequest(from: decoder))
+                self = .deleteEvent(try DeleteEventResponse(from: decoder))
             case .noAction:
-                self = .noAction(try NothingRequest(from: decoder))
+                self = .noAction(try NoActionResponse(from: decoder))
             }
         } else {
-            self = .failure(try AgentRequestError(from: decoder))
+            self = .error(try AgentErrorResponse(from: decoder))
         }
     }
 
     func encode(to encoder: Encoder) throws {
         switch self {
-        case .showEvent(let request):
-            try request.encode(to: encoder)
-        case .showSchedule(let request):
-            try request.encode(to: encoder)
-        case .createEvent(let request):
-            try request.encode(to: encoder)
-        case .updateEvent(let request):
-            try request.encode(to: encoder)
-        case .deleteEvent(let request):
-            try request.encode(to: encoder)
-        case .noAction(let request):
-            try request.encode(to: encoder)
-        case .failure(let error):
+        case .showEvent(let response):
+            try response.encode(to: encoder)
+        case .showSchedule(let response):
+            try response.encode(to: encoder)
+        case .createEvent(let response):
+            try response.encode(to: encoder)
+        case .updateEvent(let response):
+            try response.encode(to: encoder)
+        case .deleteEvent(let response):
+            try response.encode(to: encoder)
+        case .noAction(let response):
+            try response.encode(to: encoder)
+        case .error(let error):
             try error.encode(to: encoder)
         }
     }
@@ -92,9 +92,9 @@ enum AgentRequest: Codable, Sendable {
     }
 }
 
-struct ShowEventRequest: AgentSuccessRequest, Codable {
+struct ShowEventResponse: AgentSuccessResponse, Codable {
     let success: Bool
-    let request: AgentRequestKind
+    let request: AgentResponseKind
     let metadata: ShowEventMetadata
 
     typealias Metadata = ShowEventMetadata
@@ -113,7 +113,7 @@ struct ShowEventRequest: AgentSuccessRequest, Codable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let decodedRequest = try container.decode(AgentRequestKind.self, forKey: .request)
+        let decodedRequest = try container.decode(AgentResponseKind.self, forKey: .request)
         guard decodedRequest == .showEvent else {
             throw DecodingError.dataCorruptedError(forKey: .request, in: container, debugDescription: "Expected request kind 'show-event'.")
         }
@@ -136,9 +136,9 @@ struct ShowEventRequest: AgentSuccessRequest, Codable {
     }
 }
 
-struct ShowScheduleRequest: AgentSuccessRequest, Codable {
+struct ShowScheduleResponse: AgentSuccessResponse, Codable {
     let success: Bool
-    let request: AgentRequestKind
+    let request: AgentResponseKind
     let metadata: ShowScheduleMetadata
 
     typealias Metadata = ShowScheduleMetadata
@@ -157,7 +157,7 @@ struct ShowScheduleRequest: AgentSuccessRequest, Codable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let decodedRequest = try container.decode(AgentRequestKind.self, forKey: .request)
+        let decodedRequest = try container.decode(AgentResponseKind.self, forKey: .request)
         guard decodedRequest == .showSchedule else {
             throw DecodingError.dataCorruptedError(forKey: .request, in: container, debugDescription: "Expected request kind 'show-schedule'.")
         }
@@ -180,9 +180,9 @@ struct ShowScheduleRequest: AgentSuccessRequest, Codable {
     }
 }
 
-struct CreateEventRequest: AgentSuccessRequest, Codable {
+struct CreateEventResponse: AgentSuccessResponse, Codable {
     let success: Bool
-    let request: AgentRequestKind
+    let request: AgentResponseKind
     let metadata: CreateEventMetadata
 
     typealias Metadata = CreateEventMetadata
@@ -201,7 +201,7 @@ struct CreateEventRequest: AgentSuccessRequest, Codable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let decodedRequest = try container.decode(AgentRequestKind.self, forKey: .request)
+        let decodedRequest = try container.decode(AgentResponseKind.self, forKey: .request)
         guard decodedRequest == .createEvent else {
             throw DecodingError.dataCorruptedError(forKey: .request, in: container, debugDescription: "Expected request kind 'create-event'.")
         }
@@ -224,9 +224,9 @@ struct CreateEventRequest: AgentSuccessRequest, Codable {
     }
 }
 
-struct UpdateEventRequest: AgentSuccessRequest, Codable {
+struct UpdateEventResponse: AgentSuccessResponse, Codable {
     let success: Bool
-    let request: AgentRequestKind
+    let request: AgentResponseKind
     let metadata: UpdateEventMetadata
 
     typealias Metadata = UpdateEventMetadata
@@ -245,7 +245,7 @@ struct UpdateEventRequest: AgentSuccessRequest, Codable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let decodedRequest = try container.decode(AgentRequestKind.self, forKey: .request)
+        let decodedRequest = try container.decode(AgentResponseKind.self, forKey: .request)
         guard decodedRequest == .updateEvent else {
             throw DecodingError.dataCorruptedError(forKey: .request, in: container, debugDescription: "Expected request kind 'update-event'.")
         }
@@ -268,9 +268,9 @@ struct UpdateEventRequest: AgentSuccessRequest, Codable {
     }
 }
 
-struct DeleteEventRequest: AgentSuccessRequest, Codable {
+struct DeleteEventResponse: AgentSuccessResponse, Codable {
     let success: Bool
-    let request: AgentRequestKind
+    let request: AgentResponseKind
     let metadata: DeleteEventMetadata
 
     typealias Metadata = DeleteEventMetadata
@@ -289,7 +289,7 @@ struct DeleteEventRequest: AgentSuccessRequest, Codable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let decodedRequest = try container.decode(AgentRequestKind.self, forKey: .request)
+        let decodedRequest = try container.decode(AgentResponseKind.self, forKey: .request)
         guard decodedRequest == .deleteEvent else {
             throw DecodingError.dataCorruptedError(forKey: .request, in: container, debugDescription: "Expected request kind 'delete-event'.")
         }
@@ -312,20 +312,20 @@ struct DeleteEventRequest: AgentSuccessRequest, Codable {
     }
 }
 
-struct NothingRequest: AgentSuccessRequest, Codable {
+struct NoActionResponse: AgentSuccessResponse, Codable {
     let success: Bool
-    let request: AgentRequestKind
-    let metadata: NothingMetadata
+    let request: AgentResponseKind
+    let metadata: NoActionMetadata
 
-    typealias Metadata = NothingMetadata
+    typealias Metadata = NoActionMetadata
 
-    init(metadata: NothingMetadata) {
+    init(metadata: NoActionMetadata) {
         self.success = true
         self.request = .noAction
         self.metadata = metadata
     }
 
-    init(success: Bool, metadata: NothingMetadata) {
+    init(success: Bool, metadata: NoActionMetadata) {
         self.success = success
         self.request = .noAction
         self.metadata = metadata
@@ -333,13 +333,13 @@ struct NothingRequest: AgentSuccessRequest, Codable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let decodedRequest = try container.decode(AgentRequestKind.self, forKey: .request)
+        let decodedRequest = try container.decode(AgentResponseKind.self, forKey: .request)
         guard decodedRequest == .noAction else {
             throw DecodingError.dataCorruptedError(forKey: .request, in: container, debugDescription: "Expected request kind 'no-action'.")
         }
         self.success = try container.decode(Bool.self, forKey: .success)
         self.request = decodedRequest
-        self.metadata = try container.decode(NothingMetadata.self, forKey: .metadata)
+        self.metadata = try container.decode(NoActionMetadata.self, forKey: .metadata)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -454,7 +454,7 @@ struct DeleteEventMetadata: Codable, Sendable {
     }
 }
 
-struct NothingMetadata: Codable, Sendable {
+struct NoActionMetadata: Codable, Sendable {
     let reason: String
 }
 
@@ -469,7 +469,7 @@ struct DynamicCodingKey: CodingKey, Hashable {
     }
 
     init?(intValue: Int) {
-        return nil
+        nil
     }
 }
 
@@ -544,27 +544,27 @@ enum AgentMockResponse: CaseIterable, Identifiable {
     case updateEvent
     case deleteEvent
     case noAction
-    case failure
+    case error
 
     var id: String { rawValue }
 
     var rawValue: String {
         switch self {
-        case .showEvent: return AgentRequestKind.showEvent.rawValue
-        case .showSchedule: return AgentRequestKind.showSchedule.rawValue
-        case .createEvent: return AgentRequestKind.createEvent.rawValue
-        case .updateEvent: return AgentRequestKind.updateEvent.rawValue
-        case .deleteEvent: return AgentRequestKind.deleteEvent.rawValue
-        case .noAction: return AgentRequestKind.noAction.rawValue
-        case .failure: return "failure"
+        case .showEvent: return AgentResponseKind.showEvent.rawValue
+        case .showSchedule: return AgentResponseKind.showSchedule.rawValue
+        case .createEvent: return AgentResponseKind.createEvent.rawValue
+        case .updateEvent: return AgentResponseKind.updateEvent.rawValue
+        case .deleteEvent: return AgentResponseKind.deleteEvent.rawValue
+        case .noAction: return AgentResponseKind.noAction.rawValue
+        case .error: return "error"
         }
     }
 
-    var request: AgentRequest {
+    var response: AgentResponse {
         switch self {
         case .showEvent:
             return .showEvent(
-                ShowEventRequest(
+                ShowEventResponse(
                     metadata: ShowEventMetadata(
                         eventID: "event-123",
                         calendarID: "primary"
@@ -573,7 +573,7 @@ enum AgentMockResponse: CaseIterable, Identifiable {
             )
         case .showSchedule:
             return .showSchedule(
-                ShowScheduleRequest(
+                ShowScheduleResponse(
                     metadata: ShowScheduleMetadata(
                         startDateISO: "2025-11-09T10:00:00Z",
                         endDateISO: "2025-11-09T18:00:00Z"
@@ -582,12 +582,12 @@ enum AgentMockResponse: CaseIterable, Identifiable {
             )
         case .createEvent:
             return .createEvent(
-                CreateEventRequest(
+                CreateEventResponse(
                     metadata: CreateEventMetadata(
                         payload: [
                             "title": .string("Strategy Sync"),
-                            "start-date": .string("2025-11-10T15:30:00Z"),
-                            "duration-minutes": .number(45),
+                            "start-time": .string("2025-11-10T15:30:00Z"),
+                            "end-time": .string("2025-11-10T16:15:00Z"),
                             "attendees": .array([
                                 .string("ashley@example.com"),
                                 .string("mike@example.com")
@@ -599,7 +599,7 @@ enum AgentMockResponse: CaseIterable, Identifiable {
             )
         case .updateEvent:
             return .updateEvent(
-                UpdateEventRequest(
+                UpdateEventResponse(
                     metadata: UpdateEventMetadata(
                         eventID: "event-123",
                         calendarID: "primary",
@@ -612,7 +612,7 @@ enum AgentMockResponse: CaseIterable, Identifiable {
             )
         case .deleteEvent:
             return .deleteEvent(
-                DeleteEventRequest(
+                DeleteEventResponse(
                     metadata: DeleteEventMetadata(
                         eventID: "event-123",
                         calendarID: "primary"
@@ -621,16 +621,16 @@ enum AgentMockResponse: CaseIterable, Identifiable {
             )
         case .noAction:
             return .noAction(
-                NothingRequest(
-                    metadata: NothingMetadata(
+                NoActionResponse(
+                    metadata: NoActionMetadata(
                         reason: "Nothing actionable detected in the last request."
                     )
                 )
             )
-        case .failure:
-            return .failure(
-                AgentRequestError(
-                    message: "Mock failure: Unable to interpret the request."
+        case .error:
+            return .error(
+                AgentErrorResponse(
+                    message: "Mock error: Unable to interpret the request."
                 )
             )
         }
@@ -644,20 +644,20 @@ enum AgentMockResponse: CaseIterable, Identifiable {
         case .updateEvent: return "calendar.badge.exclamationmark"
         case .deleteEvent: return "calendar.badge.minus"
         case .noAction: return "zzz"
-        case .failure: return "exclamationmark.triangle"
+        case .error: return "exclamationmark.triangle"
         }
     }
 
     var title: String {
-        request.debugTitle
+        response.debugTitle
     }
 
     var subtitle: String {
-        request.debugSummary
+        response.debugSummary
     }
 }
 
-extension AgentRequest {
+extension AgentResponse {
     static var mockResponses: [AgentMockResponse] {
         AgentMockResponse.allCases
     }
@@ -676,29 +676,29 @@ extension AgentRequest {
             return "Delete Event"
         case .noAction:
             return "No Action"
-        case .failure:
-            return "Failure"
+        case .error:
+            return "Error"
         }
     }
 
     var debugSummary: String {
         switch self {
-        case .showEvent(let request):
-            return "Open event \"\(request.metadata.eventID)\" on calendar \"\(request.metadata.calendarID)\"."
-        case .showSchedule(let request):
-            return "Display schedule from \(request.metadata.startDateISO) to \(request.metadata.endDateISO)."
-        case .createEvent(let request):
-            return "Create event with payload:\n\(Self.jsonString(from: request.metadata.payload))"
-        case .updateEvent(let request):
+        case .showEvent(let response):
+            return "Open event \"\(response.metadata.eventID)\" on calendar \"\(response.metadata.calendarID)\"."
+        case .showSchedule(let response):
+            return "Display schedule from \(response.metadata.startDateISO) to \(response.metadata.endDateISO)."
+        case .createEvent(let response):
+            return "Create event with payload:\n\(Self.jsonString(from: response.metadata.payload))"
+        case .updateEvent(let response):
             return """
-Update event "\(request.metadata.eventID)" on calendar "\(request.metadata.calendarID)" with changes:
-\(Self.jsonString(from: request.metadata.changes))
+Update event "\(response.metadata.eventID)" on calendar "\(response.metadata.calendarID)" with changes:
+\(Self.jsonString(from: response.metadata.changes))
 """
-        case .deleteEvent(let request):
-            return "Delete event \"\(request.metadata.eventID)\" on calendar \"\(request.metadata.calendarID)\"."
-        case .noAction(let request):
-            return "No action taken. Reason: \(request.metadata.reason)"
-        case .failure(let error):
+        case .deleteEvent(let response):
+            return "Delete event \"\(response.metadata.eventID)\" on calendar \"\(response.metadata.calendarID)\"."
+        case .noAction(let response):
+            return "No action taken. Reason: \(response.metadata.reason)"
+        case .error(let error):
             return error.message ?? "Agent reported an unknown error."
         }
     }
@@ -717,7 +717,7 @@ Update event "\(request.metadata.eventID)" on calendar "\(request.metadata.calen
             return "calendar.badge.minus"
         case .noAction:
             return "zzz"
-        case .failure:
+        case .error:
             return "exclamationmark.triangle"
         }
     }

@@ -206,7 +206,7 @@ class GoogleCalendarService:
                 "Link a Google account before requesting calendar data."
             )
 
-        user_calendars = self._client_factory.list_calendars(user_id)
+        user_calendars = self._supabase.list_google_calendars(user_id)
         calendars_by_id = {
             calendar["google_calendar_id"]: calendar for calendar in user_calendars
         }
@@ -336,19 +336,22 @@ class GoogleCalendarService:
 
         tokens = await self._oauth_refresh(refresh_token)
         expires = tokens.expires_at()
+        expires_at_str = expires.isoformat() if isinstance(expires, datetime) else expires
         updated_metadata = _merge_metadata(
             account.get("metadata"),
             {
                 "last_token_refresh_at": datetime.now(timezone.utc).isoformat(),
             },
         )
-        updated = self._supabase.update_google_account_tokens(
+        updated = self._supabase.update_google_account(
             account["user_id"],
             account["id"],
-            access_token=tokens.access_token,
-            refresh_token=tokens.refresh_token or refresh_token,
-            expires_at=expires,
-            metadata=updated_metadata,
+            {
+                "access_token": tokens.access_token,
+                "refresh_token": tokens.refresh_token or refresh_token,
+                "expires_at": expires_at_str,
+                "metadata": updated_metadata,
+            },
         )
         account.update(updated)
         return updated["access_token"]
@@ -510,9 +513,9 @@ def _event_within_window(
     if end_all_day:
         end_dt = end_dt - timedelta(microseconds=1)
 
-    return start_dt >= window_start_local and end_dt <= window_end_local - timedelta(
-        microseconds=1
-    )
+    # Check if event overlaps with the window at all
+    # Event overlaps if: event starts before window ends AND event ends after window starts
+    return start_dt < window_end_local and end_dt > window_start_local
 
 
 def _build_event_payload(
