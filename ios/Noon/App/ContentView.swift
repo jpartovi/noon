@@ -85,6 +85,11 @@ struct ContentView: View {
             .onChange(of: viewModel.phase) { oldPhase, newPhase in
                 if newPhase == .enterCode && oldPhase == .enterPhone {
                     navigationPath.append(Destination.codeVerification)
+                } else if newPhase == .authenticated && oldPhase == .enterCode {
+                    // Clear navigation path when authenticated so we show the agent view
+                    if navigationPath.isEmpty == false {
+                        navigationPath = NavigationPath()
+                    }
                 }
             }
             .onChange(of: navigationPath.count) { oldCount, newCount in
