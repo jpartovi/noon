@@ -1,10 +1,12 @@
 import logging
+import os
 from langgraph.graph import StateGraph, END, START
 from langchain.chat_models import init_chat_model
 from typing_extensions import TypedDict
-from typing import Literal, Any, Optional
+from typing import Literal, Any, Optional, Dict
 from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
+import httpx
 from . import prompts
 
 logger = logging.getLogger(__name__)
@@ -221,6 +223,90 @@ class DeleteEventExtraction(BaseModel):
     event_description: Optional[str] = Field(
         default=None, description="Additional description to help identify the event"
     )
+
+
+# HTTP Client Utilities for Backend API Calls
+
+def _get_backend_url() -> str:
+    """Get backend API URL from environment variable."""
+    backend_url = os.getenv("BACKEND_API_URL")
+    if not backend_url:
+        raise ValueError(
+            "BACKEND_API_URL environment variable is required for backend API calls"
+        )
+    # Ensure URL doesn't end with a slash
+    return backend_url.rstrip("/")
+
+
+async def _backend_request(
+    method: str,
+    path: str,
+    auth_token: str,
+    json_data: Optional[Dict[str, Any]] = None,
+    params: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Make an authenticated request to the backend API.
+
+    Args:
+        method: HTTP method (GET, POST, etc.)
+        path: API endpoint path (e.g., "/api/v1/calendars/schedule")
+        auth_token: Supabase JWT access token for authentication
+        json_data: Optional JSON body for POST/PUT requests
+        params: Optional query parameters
+
+    Returns:
+        Response JSON data as a dictionary
+
+    Raises:
+        httpx.HTTPStatusError: If the request fails with an HTTP error
+        ValueError: If BACKEND_API_URL is not set
+    """
+    backend_url = _get_backend_url()
+    url = f"{backend_url}{path}"
+
+    headers = {
+        "Authorization": f"Bearer {auth_token}",
+        "Content-Type": "application/json",
+    }
+
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.request(
+                method=method,
+                url=url,
+                headers=headers,
+                json=json_data,
+                params=params,
+                timeout=30.0,
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                f"Backend API request failed: {method} {path} - {e.response.status_code}: {e.response.text}"
+            )
+            raise
+        except httpx.RequestError as e:
+            logger.error(f"Backend API request error: {method} {path} - {str(e)}")
+            raise
+
+
+async def backend_get(
+    path: str, auth_token: str, params: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """Make an authenticated GET request to the backend API."""
+    return await _backend_request("GET", path, auth_token, params=params)
+
+
+async def backend_post(
+    path: str,
+    auth_token: str,
+    json_data: Optional[Dict[str, Any]] = None,
+    params: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Make an authenticated POST request to the backend API."""
+    return await _backend_request("POST", path, auth_token, json_data=json_data, params=params)
 
 
 def llm_step(state: State) -> dict:

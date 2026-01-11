@@ -2,7 +2,7 @@
 
 import logging
 from urllib.parse import urlparse
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request
 from langgraph_sdk import get_client
 
 from schemas.user import AuthenticatedUser
@@ -11,7 +11,6 @@ from schemas.confirm_action import ConfirmActionRequest
 from core.dependencies import get_current_user
 from core.config import get_settings
 from domains.transcription.service import TranscriptionService
-from domains.calendars.repository import CalendarRepository
 from services import agent_calendar_service
 
 logger = logging.getLogger(__name__)
@@ -24,6 +23,7 @@ transcription_service = TranscriptionService()
 
 @router.post("/action")
 async def agent_action(
+    request: Request,
     file: UploadFile = File(..., description="Audio file to transcribe and process"),
     current_user: AuthenticatedUser = Depends(get_current_user),
 ):
@@ -34,27 +34,19 @@ async def agent_action(
     is passed to the agent which will classify intent and extract metadata for calendar operations.
     """
     try:
-        # Get user's Google OAuth tokens from Supabase
-        repository = CalendarRepository()
-        accounts = repository.get_accounts(current_user.id)
-        if not accounts:
+        # Extract Supabase access token from Authorization header
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
             raise HTTPException(
-                status_code=400,
-                detail="No Google account linked. Please connect a Google account first.",
+                status_code=401,
+                detail="Missing or invalid authentication token",
             )
+        supabase_access_token = auth_header.replace("Bearer ", "", 1)
 
-        # Choose first account
-        google_account = accounts[0]
-
-        # Prepare auth data with Google tokens
-        # The agent expects tokens in a nested structure
+        # Prepare auth data with Supabase token
         auth = {
             "user_id": current_user.id,
-            "google_tokens": {
-                "access_token": google_account.get("access_token"),
-                "refresh_token": google_account.get("refresh_token"),
-                "expires_at": google_account.get("expires_at"),
-            },
+            "supabase_access_token": supabase_access_token,
         }
 
         # Validate file
