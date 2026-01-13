@@ -22,7 +22,7 @@ final class GoogleCalendarScheduleService: GoogleCalendarScheduleServicing {
     private let baseURL: URL
     private let urlSession: URLSession
 
-    init(baseURL: URL = GoogleCalendarScheduleService.defaultBaseURL(), urlSession: URLSession = .shared) {
+    init(baseURL: URL = GoogleCalendarScheduleService.defaultBaseURL(), urlSession: URLSession = NetworkSession.shared) {
         self.baseURL = baseURL
         self.urlSession = urlSession
     }

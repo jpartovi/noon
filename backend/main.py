@@ -2,22 +2,19 @@
 
 from __future__ import annotations
 
-import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.v1.router import router as v1_router
 from api.v1.calendars import oauth_callback
-from fastapi import Query
+from core.logging import setup_logging, get_logger
+from core.middleware import RequestLoggingMiddleware
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
-logger = logging.getLogger(__name__)
+# Configure centralized logging
+setup_logging()
+logger = get_logger(__name__)
 
 
 @asynccontextmanager
@@ -44,6 +41,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Add request logging middleware (must be after CORS to log authenticated requests)
+app.add_middleware(RequestLoggingMiddleware)
 
 # Include API router
 app.include_router(v1_router, prefix="/api/v1")

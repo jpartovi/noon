@@ -34,7 +34,7 @@ struct AgentActionService: AgentActionServicing {
         let bodyData = try buildMultipartBody(fileURL: fileURL, boundary: boundary)
         request.httpBody = bodyData
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await NetworkSession.shared.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw ServiceError.unexpectedResponse

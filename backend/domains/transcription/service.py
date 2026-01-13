@@ -11,8 +11,6 @@ import httpx
 
 from core.config import get_settings
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -188,9 +186,6 @@ class TranscriptionService:
             "Content-Type": content_type,
         }
 
-        logger.info(
-            f"Deepgram prerecord transcription start: {actual_filename}, {len(audio_bytes)} bytes"
-        )
         async with httpx.AsyncClient(timeout=60.0) as client:
             resp = await client.post(
                 "https://api.deepgram.com/v1/listen",
@@ -202,5 +197,4 @@ class TranscriptionService:
             payload = resp.json()
 
         text = self._extract_transcript_from_deepgram(payload)
-        logger.info("Deepgram prerecord transcription completed")
         return text

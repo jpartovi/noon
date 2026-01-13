@@ -84,10 +84,8 @@ async def search_events_for_user(
             calendars_to_search = [{"id": calendar_id}]
         else:
             # Get all calendars for the user
-            logger.info(f"Fetching all calendars for user {user_id}")
             all_calendars = await wrapper.list_calendars(min_access_role="reader")
             calendars_to_search = all_calendars
-            logger.info(f"Found {len(calendars_to_search)} calendars to search")
         
         # Search across all calendars
         all_formatted_events = []
@@ -103,7 +101,6 @@ async def search_events_for_user(
                 continue
                 
             try:
-                logger.debug(f"Searching calendar {cal_id} for query: {query}")
                 result = await wrapper.search_events(
                     query=query,
                     calendar_id=cal_id,
@@ -142,7 +139,7 @@ async def search_events_for_user(
             except GoogleCalendarAPIError as e:
                 # Log error but continue searching other calendars
                 error_msg = f"Error searching calendar {cal_id}: {str(e)}"
-                logger.warning(error_msg)
+                logger.warning(f"Calendar search error user_id={user_id} calendar={cal_id}: {str(e)}")
                 errors.append(error_msg)
                 continue
         
@@ -170,7 +167,7 @@ async def search_events_for_user(
         return response
         
     except GoogleCalendarAPIError as e:
-        logger.error(f"Failed to search events: {e}")
+        logger.error(f"Failed to search events user_id={user_id}: {e}")
         return {
             "status": "error",
             "error": str(e),
@@ -178,7 +175,10 @@ async def search_events_for_user(
             "events": [],
         }
     except Exception as e:
-        logger.error(f"Unexpected error searching events: {e}", exc_info=True)
+        logger.error(
+            f"Unexpected error searching events user_id={user_id}: {e}",
+            exc_info=True,
+        )
         return {
             "status": "error",
             "error": f"Unexpected error: {str(e)}",

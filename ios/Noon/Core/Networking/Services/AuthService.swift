@@ -20,7 +20,7 @@ final class AuthService: AuthServicing {
     private let baseURL: URL
     private let urlSession: URLSession
 
-    init(baseURL: URL = AuthService.defaultBaseURL(), urlSession: URLSession = .shared) {
+    init(baseURL: URL = AuthService.defaultBaseURL(), urlSession: URLSession = NetworkSession.shared) {
         self.baseURL = baseURL
         self.urlSession = urlSession
     }

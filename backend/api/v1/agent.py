@@ -57,9 +57,6 @@ async def agent_action(
             raise HTTPException(status_code=400, detail="No file provided")
 
         # Transcribe audio file
-        logger.info(
-            f"Transcribing audio file: {file.filename} for user {current_user.id}"
-        )
         try:
             # Reset file pointer to beginning in case it was read already
             await file.seek(0)
@@ -71,7 +68,10 @@ async def agent_action(
                 status_code=400, detail=f"Transcription error: {str(e)}"
             )
         except Exception as e:
-            logger.error(f"Transcription failed: {e}", exc_info=True)
+            logger.error(
+                f"Transcription failed user_id={current_user.id} file={file.filename}: {e}",
+                exc_info=True,
+            )
             raise HTTPException(
                 status_code=500, detail=f"Failed to transcribe audio: {str(e)}"
             )
@@ -82,8 +82,6 @@ async def agent_action(
                 detail="Transcription resulted in empty text. Please ensure the audio file contains speech.",
             )
 
-        logger.info(f"Transcription completed: {transcribed_text[:100]}...")
-
         # Create LangGraph SDK client and invoke agent
         settings = get_settings()
 
@@ -93,7 +91,9 @@ async def agent_action(
         api_key = settings.langsmith_api_key or settings.langgraph_api_key
 
         if api_key is None and not is_local_agent:
-            logger.error("LangGraph agent API key is missing for remote agent URL.")
+            logger.error(
+                f"LangGraph agent API key is missing for remote agent URL user_id={current_user.id}"
+            )
             raise HTTPException(
                 status_code=500,
                 detail="Agent service is not configured with LangSmith authentication credentials."
@@ -108,7 +108,6 @@ async def agent_action(
         supabase_client = get_service_client()
         user_timezone = None
         try:
-            logger.info(f"Fetching timezone for user {current_user.id} from users table")
             user_result = (
                 supabase_client.table("users")
                 .select("timezone")
@@ -117,16 +116,16 @@ async def agent_action(
                 .execute()
             )
             
-            logger.info(f"Database query result: {user_result.data}")
-            
             if user_result.data:
                 user_timezone = user_result.data.get("timezone")
-                logger.info(f"Retrieved timezone from database: {user_timezone}")
             else:
-                logger.error(f"No user data returned for user {current_user.id}")
+                logger.error(f"No user data returned user_id={current_user.id}")
                 
         except Exception as e:
-            logger.error(f"Failed to get user timezone from database: {e}", exc_info=True)
+            logger.error(
+                f"Failed to get user timezone user_id={current_user.id}: {e}",
+                exc_info=True,
+            )
             raise HTTPException(
                 status_code=500,
                 detail=f"Failed to retrieve user timezone: {str(e)}"
@@ -134,14 +133,13 @@ async def agent_action(
         
         # Validate timezone is set and not default 'UTC'
         if not user_timezone or user_timezone.strip() == "":
-            logger.error(f"User {current_user.id} has no timezone configured")
+            logger.error(f"User timezone not configured user_id={current_user.id}")
             raise HTTPException(
                 status_code=400,
                 detail="User timezone is not configured. Please set your timezone in your account settings."
             )
         
         if user_timezone.upper() == "UTC":
-            logger.warning(f"User {current_user.id} has default UTC timezone - this may indicate timezone was never set")
             raise HTTPException(
                 status_code=400,
                 detail="User timezone is not configured. Please set your timezone in your account settings."
@@ -153,9 +151,11 @@ async def agent_action(
             user_tz = ZoneInfo(user_timezone)
             current_user_time = current_utc.astimezone(user_tz)
             current_time_str = current_user_time.isoformat()
-            logger.info(f"Successfully converted time to user timezone {user_timezone}: {current_time_str}")
         except Exception as e:
-            logger.error(f"Invalid timezone '{user_timezone}' for user {current_user.id}: {e}", exc_info=True)
+            logger.error(
+                f"Invalid timezone user_id={current_user.id} timezone={user_timezone}: {e}",
+                exc_info=True,
+            )
             raise HTTPException(
                 status_code=400,
                 detail=f"Invalid timezone configuration: {user_timezone}. Please set a valid timezone in your account settings."
@@ -175,7 +175,7 @@ async def agent_action(
         }
 
         logger.info(
-            f"Invoking agent for user {current_user.id} with transcribed query: {transcribed_text[:50]}..."
+            f"Invoking agent user_id={current_user.id} query_length={len(transcribed_text)}"
         )
 
         # Invoke and wait for completion
@@ -186,9 +186,9 @@ async def agent_action(
         )
 
         logger.info(
-            f"Agent completed. Type: {result.get('type')}, Success: {result.get('success')}"
+            f"Agent completed user_id={current_user.id} "
+            f"type={result.get('type')} success={result.get('success')}"
         )
-        logger.info(f"Result keys: {list(result.keys())}")
 
         # Pass through agent response directly
         # Ensure success is always a boolean for Swift decoder
@@ -209,7 +209,10 @@ async def agent_action(
             }
         else:
             # Fallback for unexpected responses - treat as error
-            logger.warning(f"Unexpected result format: {result}")
+            logger.warning(
+                f"Unexpected result format user_id={current_user.id} "
+                f"keys={list(result.keys())}"
+            )
             return {
                 "success": False,
                 "message": f"Unexpected response format from agent: {list(result.keys())}",
@@ -218,7 +221,10 @@ async def agent_action(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Agent invocation failed: {e}", exc_info=True)
+        logger.error(
+            f"Agent invocation failed user_id={current_user.id}: {e}",
+            exc_info=True,
+        )
         raise HTTPException(
             status_code=500,
             detail=f"Failed to invoke agent: {str(e)}"
@@ -247,7 +253,10 @@ async def confirm_action(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to confirm action: {e}", exc_info=True)
+        logger.error(
+            f"Failed to confirm action user_id={current_user.id}: {e}",
+            exc_info=True,
+        )
         return ErrorResponse(
             success="false",
             message=f"Failed to confirm action: {str(e)}"

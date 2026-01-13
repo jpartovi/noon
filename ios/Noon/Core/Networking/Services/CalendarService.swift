@@ -20,7 +20,7 @@ final class CalendarService: CalendarServicing {
     private let baseURL: URL
     private let urlSession: URLSession
 
-    init(baseURL: URL = CalendarService.defaultBaseURL(), urlSession: URLSession = .shared) {
+    init(baseURL: URL = CalendarService.defaultBaseURL(), urlSession: URLSession = NetworkSession.shared) {
         self.baseURL = baseURL
         self.urlSession = urlSession
     }

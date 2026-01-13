@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Annotated
 
 from schemas.user import AuthenticatedUser
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from domains.auth.repository import AuthRepository
@@ -14,11 +14,13 @@ security = HTTPBearer()
 
 
 async def get_current_user(
+    request: Request,
     credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)],
 ) -> AuthenticatedUser:
     """
     Dependency to get the current authenticated user from the request.
     Validates the JWT token and returns the user information.
+    Also stores user_id in request.state for middleware access.
     """
     token = credentials.credentials
 
@@ -38,6 +40,9 @@ async def get_current_user(
             detail="Invalid authentication credentials",
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
+
+    # Store user_id in request.state for middleware logging
+    request.state.user_id = user["id"]
 
     return AuthenticatedUser(
         id=user["id"],
