@@ -19,7 +19,7 @@ enum AgentResponseKind: String, Codable, Sendable {
 @preconcurrency protocol AgentSuccessResponse: Sendable {
     associatedtype Metadata: Sendable
     var success: Bool { get }
-    var request: AgentResponseKind { get }
+    var type: AgentResponseKind { get }
     var metadata: Metadata { get }
 }
 
@@ -47,7 +47,7 @@ enum AgentResponse: Codable, Sendable {
         let success = try container.decode(Bool.self, forKey: .success)
 
         if success {
-            let kind = try container.decode(AgentResponseKind.self, forKey: .request)
+            let kind = try container.decode(AgentResponseKind.self, forKey: .type)
             switch kind {
             case .showEvent:
                 self = .showEvent(try ShowEventResponse(from: decoder))
@@ -88,270 +88,270 @@ enum AgentResponse: Codable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case success
-        case request
+        case type
     }
 }
 
 struct ShowEventResponse: AgentSuccessResponse, Codable {
     let success: Bool
-    let request: AgentResponseKind
+    let type: AgentResponseKind
     let metadata: ShowEventMetadata
 
     typealias Metadata = ShowEventMetadata
 
     init(metadata: ShowEventMetadata) {
         self.success = true
-        self.request = .showEvent
+        self.type = .showEvent
         self.metadata = metadata
     }
 
     init(success: Bool, metadata: ShowEventMetadata) {
         self.success = success
-        self.request = .showEvent
+        self.type = .showEvent
         self.metadata = metadata
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let decodedRequest = try container.decode(AgentResponseKind.self, forKey: .request)
-        guard decodedRequest == .showEvent else {
-            throw DecodingError.dataCorruptedError(forKey: .request, in: container, debugDescription: "Expected request kind 'show-event'.")
+        let decodedType = try container.decode(AgentResponseKind.self, forKey: .type)
+        guard decodedType == .showEvent else {
+            throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Expected type 'show-event'.")
         }
         self.success = try container.decode(Bool.self, forKey: .success)
-        self.request = decodedRequest
+        self.type = decodedType
         self.metadata = try container.decode(ShowEventMetadata.self, forKey: .metadata)
     }
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(success, forKey: .success)
-        try container.encode(request, forKey: .request)
+        try container.encode(type, forKey: .type)
         try container.encode(metadata, forKey: .metadata)
     }
 
     private enum CodingKeys: String, CodingKey {
         case success
-        case request
+        case type
         case metadata
     }
 }
 
 struct ShowScheduleResponse: AgentSuccessResponse, Codable {
     let success: Bool
-    let request: AgentResponseKind
+    let type: AgentResponseKind
     let metadata: ShowScheduleMetadata
 
     typealias Metadata = ShowScheduleMetadata
 
     init(metadata: ShowScheduleMetadata) {
         self.success = true
-        self.request = .showSchedule
+        self.type = .showSchedule
         self.metadata = metadata
     }
 
     init(success: Bool, metadata: ShowScheduleMetadata) {
         self.success = success
-        self.request = .showSchedule
+        self.type = .showSchedule
         self.metadata = metadata
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let decodedRequest = try container.decode(AgentResponseKind.self, forKey: .request)
-        guard decodedRequest == .showSchedule else {
-            throw DecodingError.dataCorruptedError(forKey: .request, in: container, debugDescription: "Expected request kind 'show-schedule'.")
+        let decodedType = try container.decode(AgentResponseKind.self, forKey: .type)
+        guard decodedType == .showSchedule else {
+            throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Expected type 'show-schedule'.")
         }
         self.success = try container.decode(Bool.self, forKey: .success)
-        self.request = decodedRequest
+        self.type = decodedType
         self.metadata = try container.decode(ShowScheduleMetadata.self, forKey: .metadata)
     }
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(success, forKey: .success)
-        try container.encode(request, forKey: .request)
+        try container.encode(type, forKey: .type)
         try container.encode(metadata, forKey: .metadata)
     }
 
     private enum CodingKeys: String, CodingKey {
         case success
-        case request
+        case type
         case metadata
     }
 }
 
 struct CreateEventResponse: AgentSuccessResponse, Codable {
     let success: Bool
-    let request: AgentResponseKind
+    let type: AgentResponseKind
     let metadata: CreateEventMetadata
 
     typealias Metadata = CreateEventMetadata
 
     init(metadata: CreateEventMetadata) {
         self.success = true
-        self.request = .createEvent
+        self.type = .createEvent
         self.metadata = metadata
     }
 
     init(success: Bool, metadata: CreateEventMetadata) {
         self.success = success
-        self.request = .createEvent
+        self.type = .createEvent
         self.metadata = metadata
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let decodedRequest = try container.decode(AgentResponseKind.self, forKey: .request)
-        guard decodedRequest == .createEvent else {
-            throw DecodingError.dataCorruptedError(forKey: .request, in: container, debugDescription: "Expected request kind 'create-event'.")
+        let decodedType = try container.decode(AgentResponseKind.self, forKey: .type)
+        guard decodedType == .createEvent else {
+            throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Expected type 'create-event'.")
         }
         self.success = try container.decode(Bool.self, forKey: .success)
-        self.request = decodedRequest
+        self.type = decodedType
         self.metadata = try container.decode(CreateEventMetadata.self, forKey: .metadata)
     }
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(success, forKey: .success)
-        try container.encode(request, forKey: .request)
+        try container.encode(type, forKey: .type)
         try container.encode(metadata, forKey: .metadata)
     }
 
     private enum CodingKeys: String, CodingKey {
         case success
-        case request
+        case type
         case metadata
     }
 }
 
 struct UpdateEventResponse: AgentSuccessResponse, Codable {
     let success: Bool
-    let request: AgentResponseKind
+    let type: AgentResponseKind
     let metadata: UpdateEventMetadata
 
     typealias Metadata = UpdateEventMetadata
 
     init(metadata: UpdateEventMetadata) {
         self.success = true
-        self.request = .updateEvent
+        self.type = .updateEvent
         self.metadata = metadata
     }
 
     init(success: Bool, metadata: UpdateEventMetadata) {
         self.success = success
-        self.request = .updateEvent
+        self.type = .updateEvent
         self.metadata = metadata
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let decodedRequest = try container.decode(AgentResponseKind.self, forKey: .request)
-        guard decodedRequest == .updateEvent else {
-            throw DecodingError.dataCorruptedError(forKey: .request, in: container, debugDescription: "Expected request kind 'update-event'.")
+        let decodedType = try container.decode(AgentResponseKind.self, forKey: .type)
+        guard decodedType == .updateEvent else {
+            throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Expected type 'update-event'.")
         }
         self.success = try container.decode(Bool.self, forKey: .success)
-        self.request = decodedRequest
+        self.type = decodedType
         self.metadata = try container.decode(UpdateEventMetadata.self, forKey: .metadata)
     }
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(success, forKey: .success)
-        try container.encode(request, forKey: .request)
+        try container.encode(type, forKey: .type)
         try container.encode(metadata, forKey: .metadata)
     }
 
     private enum CodingKeys: String, CodingKey {
         case success
-        case request
+        case type
         case metadata
     }
 }
 
 struct DeleteEventResponse: AgentSuccessResponse, Codable {
     let success: Bool
-    let request: AgentResponseKind
+    let type: AgentResponseKind
     let metadata: DeleteEventMetadata
 
     typealias Metadata = DeleteEventMetadata
 
     init(metadata: DeleteEventMetadata) {
         self.success = true
-        self.request = .deleteEvent
+        self.type = .deleteEvent
         self.metadata = metadata
     }
 
     init(success: Bool, metadata: DeleteEventMetadata) {
         self.success = success
-        self.request = .deleteEvent
+        self.type = .deleteEvent
         self.metadata = metadata
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let decodedRequest = try container.decode(AgentResponseKind.self, forKey: .request)
-        guard decodedRequest == .deleteEvent else {
-            throw DecodingError.dataCorruptedError(forKey: .request, in: container, debugDescription: "Expected request kind 'delete-event'.")
+        let decodedType = try container.decode(AgentResponseKind.self, forKey: .type)
+        guard decodedType == .deleteEvent else {
+            throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Expected type 'delete-event'.")
         }
         self.success = try container.decode(Bool.self, forKey: .success)
-        self.request = decodedRequest
+        self.type = decodedType
         self.metadata = try container.decode(DeleteEventMetadata.self, forKey: .metadata)
     }
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(success, forKey: .success)
-        try container.encode(request, forKey: .request)
+        try container.encode(type, forKey: .type)
         try container.encode(metadata, forKey: .metadata)
     }
 
     private enum CodingKeys: String, CodingKey {
         case success
-        case request
+        case type
         case metadata
     }
 }
 
 struct NoActionResponse: AgentSuccessResponse, Codable {
     let success: Bool
-    let request: AgentResponseKind
+    let type: AgentResponseKind
     let metadata: NoActionMetadata
 
     typealias Metadata = NoActionMetadata
 
     init(metadata: NoActionMetadata) {
         self.success = true
-        self.request = .noAction
+        self.type = .noAction
         self.metadata = metadata
     }
 
     init(success: Bool, metadata: NoActionMetadata) {
         self.success = success
-        self.request = .noAction
+        self.type = .noAction
         self.metadata = metadata
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let decodedRequest = try container.decode(AgentResponseKind.self, forKey: .request)
-        guard decodedRequest == .noAction else {
-            throw DecodingError.dataCorruptedError(forKey: .request, in: container, debugDescription: "Expected request kind 'no-action'.")
+        let decodedType = try container.decode(AgentResponseKind.self, forKey: .type)
+        guard decodedType == .noAction else {
+            throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Expected type 'no-action'.")
         }
         self.success = try container.decode(Bool.self, forKey: .success)
-        self.request = decodedRequest
+        self.type = decodedType
         self.metadata = try container.decode(NoActionMetadata.self, forKey: .metadata)
     }
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(success, forKey: .success)
-        try container.encode(request, forKey: .request)
+        try container.encode(type, forKey: .type)
         try container.encode(metadata, forKey: .metadata)
     }
 
     private enum CodingKeys: String, CodingKey {
         case success
-        case request
+        case type
         case metadata
     }
 }

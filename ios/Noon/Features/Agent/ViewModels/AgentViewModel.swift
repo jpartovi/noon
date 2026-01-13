@@ -229,13 +229,25 @@ final class AgentViewModel: ObservableObject {
         recording: AgentAudioRecorder.Recording,
         accessToken: String
     ) async throws -> (AgentActionResult, String) {
-        // Supabase handles token refresh automatically, so we don't need manual retry logic
-        // If we get 401, it means the session is truly invalid (refresh token expired, etc.)
-        let result = try await service.performAgentAction(
-            fileURL: recording.fileURL,
-            accessToken: accessToken
-        )
-        return (result, accessToken)
+        // Try the request first
+        do {
+            let result = try await service.performAgentAction(
+                fileURL: recording.fileURL,
+                accessToken: accessToken
+            )
+            return (result, accessToken)
+        } catch let error as ServerError where error.statusCode == 401 {
+            // Token expired - refresh and retry once
+            print("[Agent] Got 401, refreshing token and retrying...")
+            guard let refreshedToken = await AuthTokenProvider.shared.currentAccessToken() else {
+                throw AccessTokenError.missingAuthProvider
+            }
+            let result = try await service.performAgentAction(
+                fileURL: recording.fileURL,
+                accessToken: refreshedToken
+            )
+            return (result, refreshedToken)
+        }
     }
 
     private func fetchScheduleEvents(
@@ -243,14 +255,27 @@ final class AgentViewModel: ObservableObject {
         endDateISO: String,
         accessToken: String
     ) async throws -> [DisplayEvent] {
-        // Supabase handles token refresh automatically, so we don't need manual retry logic
-        // If we get 401, it means the session is truly invalid (refresh token expired, etc.)
-        let schedule = try await scheduleService.fetchSchedule(
-            startDateISO: startDateISO,
-            endDateISO: endDateISO,
-            accessToken: accessToken
-        )
-        return schedule.events.map { DisplayEvent(event: $0) }
+        // Try the request first
+        do {
+            let schedule = try await scheduleService.fetchSchedule(
+                startDateISO: startDateISO,
+                endDateISO: endDateISO,
+                accessToken: accessToken
+            )
+            return schedule.events.map { DisplayEvent(event: $0) }
+        } catch GoogleCalendarScheduleServiceError.unauthorized {
+            // Token expired - refresh and retry once
+            print("[Agent] Got 401 fetching schedule, refreshing token and retrying...")
+            guard let refreshedToken = await AuthTokenProvider.shared.currentAccessToken() else {
+                throw AccessTokenError.missingAuthProvider
+            }
+            let schedule = try await scheduleService.fetchSchedule(
+                startDateISO: startDateISO,
+                endDateISO: endDateISO,
+                accessToken: refreshedToken
+            )
+            return schedule.events.map { DisplayEvent(event: $0) }
+        }
     }
 
     // MARK: - Show Event Handling (Mock)

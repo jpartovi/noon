@@ -26,7 +26,7 @@ class ShowEventResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
     success: Literal["true"]
-    request: Literal["show-event"]
+    type: Literal["show-event"]
     metadata: ShowEventMetadata
 
 
@@ -34,7 +34,7 @@ class ShowScheduleResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
     success: Literal["true"]
-    request: Literal["show-schedule"]
+    type: Literal["show-schedule"]
     metadata: ShowScheduleMetadata
 
 
@@ -42,7 +42,7 @@ class CreateEventResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
     success: Literal["true"]
-    request: Literal["create-event"]
+    type: Literal["create-event"]
     metadata: EventPayload
 
 
@@ -50,7 +50,7 @@ class UpdateEventResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
     success: Literal["true"]
-    request: Literal["update-event"]
+    type: Literal["update-event"]
     metadata: "UpdateEventMetadata"
 
 
@@ -58,7 +58,7 @@ class DeleteEventResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
     success: Literal["true"]
-    request: Literal["delete-event"]
+    type: Literal["delete-event"]
     metadata: ShowEventMetadata
 
 
@@ -79,7 +79,7 @@ class NoActionResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
     success: Literal["true"]
-    request: Literal["no-action"]
+    type: Literal["no-action"]
     metadata: NoActionResponseMetadata
 
 

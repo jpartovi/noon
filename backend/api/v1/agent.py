@@ -1,6 +1,8 @@
 """Agent endpoint for invoking the LangGraph calendar agent."""
 
 import logging
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request
 from langgraph_sdk import get_client
@@ -12,6 +14,7 @@ from core.dependencies import get_current_user
 from core.config import get_settings
 from domains.transcription.service import TranscriptionService
 from services import agent_calendar_service
+from db.session import get_service_client
 
 logger = logging.getLogger(__name__)
 
@@ -101,12 +104,74 @@ async def agent_action(
             api_key=api_key,
         )
 
+        # Get user timezone from users table
+        supabase_client = get_service_client()
+        user_timezone = None
+        try:
+            logger.info(f"Fetching timezone for user {current_user.id} from users table")
+            user_result = (
+                supabase_client.table("users")
+                .select("timezone")
+                .eq("id", current_user.id)
+                .single()
+                .execute()
+            )
+            
+            logger.info(f"Database query result: {user_result.data}")
+            
+            if user_result.data:
+                user_timezone = user_result.data.get("timezone")
+                logger.info(f"Retrieved timezone from database: {user_timezone}")
+            else:
+                logger.error(f"No user data returned for user {current_user.id}")
+                
+        except Exception as e:
+            logger.error(f"Failed to get user timezone from database: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to retrieve user timezone: {str(e)}"
+            )
+        
+        # Validate timezone is set and not default 'UTC'
+        if not user_timezone or user_timezone.strip() == "":
+            logger.error(f"User {current_user.id} has no timezone configured")
+            raise HTTPException(
+                status_code=400,
+                detail="User timezone is not configured. Please set your timezone in your account settings."
+            )
+        
+        if user_timezone.upper() == "UTC":
+            logger.warning(f"User {current_user.id} has default UTC timezone - this may indicate timezone was never set")
+            raise HTTPException(
+                status_code=400,
+                detail="User timezone is not configured. Please set your timezone in your account settings."
+            )
+        
+        # Validate timezone is a valid IANA timezone
+        current_utc = datetime.now(timezone.utc)
+        try:
+            user_tz = ZoneInfo(user_timezone)
+            current_user_time = current_utc.astimezone(user_tz)
+            current_time_str = current_user_time.isoformat()
+            logger.info(f"Successfully converted time to user timezone {user_timezone}: {current_time_str}")
+        except Exception as e:
+            logger.error(f"Invalid timezone '{user_timezone}' for user {current_user.id}: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid timezone configuration: {user_timezone}. Please set a valid timezone in your account settings."
+            )
+
         input_state = {
             "query": transcribed_text,
             "auth": auth,
             "success": False,
-            "request": "no-action",
+            "type": None,
             "metadata": {},
+            "messages": [],
+            "tool_results": {},
+            "terminated": False,
+            "current_time": current_time_str,
+            "timezone": user_timezone,
         }
 
         logger.info(
@@ -121,14 +186,34 @@ async def agent_action(
         )
 
         logger.info(
-            f"Agent completed. Request: {result.get('request')}, Success: {result.get('success')}"
+            f"Agent completed. Type: {result.get('type')}, Success: {result.get('success')}"
         )
+        logger.info(f"Result keys: {list(result.keys())}")
 
-        return {
-            "success": result.get("success", False),
-            "request": result.get("request", "no-action"),
-            "metadata": result.get("metadata", {}),
-        }
+        # Pass through agent response directly
+        # Ensure success is always a boolean for Swift decoder
+        result_success = bool(result.get("success", False))
+        
+        if "message" in result:
+            # Error response - ensure success is False
+            return {
+                "success": False,  # Always False for error responses
+                "message": result.get("message", "Unknown error"),
+            }
+        elif "type" in result:
+            # Success response - pass through as-is, ensure success is True
+            return {
+                "success": True,  # Always True for success responses
+                "type": result.get("type"),
+                "metadata": result.get("metadata", {}),
+            }
+        else:
+            # Fallback for unexpected responses - treat as error
+            logger.warning(f"Unexpected result format: {result}")
+            return {
+                "success": False,
+                "message": f"Unexpected response format from agent: {list(result.keys())}",
+            }
 
     except HTTPException:
         raise

@@ -105,7 +105,7 @@ def mock_langgraph_client():
         async def mock_wait(*args, **kwargs):
             return {
                 "success": True,
-                "request": "show-schedule",
+                "type": "show-schedule",
                 "metadata": {"start-date": "2024-11-16", "end-date": "2024-11-17"},
             }
 

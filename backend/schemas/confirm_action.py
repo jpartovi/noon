@@ -14,21 +14,21 @@ from schemas.agent_response import (
 class CreateEventRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
-    request: Literal["create-event"]
+    type: Literal["create-event"]
     metadata: EventPayload
 
 
 class UpdateEventRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
-    request: Literal["update-event"]
+    type: Literal["update-event"]
     metadata: UpdateEventMetadata
 
 
 class DeleteEventRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
-    request: Literal["delete-event"]
+    type: Literal["delete-event"]
     metadata: ShowEventMetadata
 
 

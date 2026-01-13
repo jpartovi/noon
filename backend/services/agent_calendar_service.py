@@ -215,7 +215,7 @@ async def confirm_calendar_action(
             )
             return {
                 "success": "true",
-                "request": "create-event",
+                "type": "create-event",
                 "metadata": created_event,
             }
         except GoogleCalendarAPIError as e:
@@ -244,7 +244,7 @@ async def confirm_calendar_action(
             )
             return {
                 "success": "true",
-                "request": "update-event",
+                "type": "update-event",
                 "metadata": {
                     "event-id": event_id,
                     "calendar-id": calendar_id,
@@ -272,7 +272,7 @@ async def confirm_calendar_action(
             )
             return {
                 "success": "true",
-                "request": "delete-event",
+                "type": "delete-event",
                 "metadata": {
                     "event-id": metadata.event_id,
                     "calendar-id": metadata.calendar_id,
