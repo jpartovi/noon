@@ -156,6 +156,97 @@ class CalendarService:
 
         return event_payload
 
+    async def create_event(
+        self,
+        *,
+        user_id: str,
+        calendar_id: str,
+        summary: str,
+        start: datetime,
+        end: datetime,
+        description: str | None = None,
+        location: str | None = None,
+        timezone_name: str = "UTC",
+    ) -> Dict[str, Any]:
+        """Create a new event in Google Calendar."""
+        contexts, calendars_by_id = await self._prepare_context(user_id)
+
+        # Find the account context that has access to this calendar
+        event_context: AccountContext | None = None
+        for context in contexts:
+            await self._hydrate_calendars([context])
+            for calendar in context.calendars:
+                if calendar.get("id") == calendar_id:
+                    event_context = context
+                    break
+            if event_context:
+                break
+
+        if event_context is None:
+            raise GoogleCalendarUserError(
+                f"Calendar {calendar_id} not found in any linked Google account."
+            )
+
+        # Format event data for Google Calendar API
+        tz = ZoneInfo(timezone_name)
+        start_dt = start.replace(tzinfo=tz) if start.tzinfo is None else start.astimezone(tz)
+        end_dt = end.replace(tzinfo=tz) if end.tzinfo is None else end.astimezone(tz)
+
+        event_data: Dict[str, Any] = {
+            "summary": summary,
+            "start": {
+                "dateTime": start_dt.isoformat(),
+                "timeZone": timezone_name,
+            },
+            "end": {
+                "dateTime": end_dt.isoformat(),
+                "timeZone": timezone_name,
+            },
+        }
+
+        if description:
+            event_data["description"] = description
+        if location:
+            event_data["location"] = location
+
+        # Create the event via provider
+        try:
+            created_event = await event_context.provider.create_event(
+                calendar_id=calendar_id,
+                event_data=event_data,
+            )
+        except GoogleCalendarAPIError as exc:
+            if exc.status_code == 401:
+                await self._handle_unauthorized(event_context)
+                created_event = await event_context.provider.create_event(
+                    calendar_id=calendar_id,
+                    event_data=event_data,
+                )
+            else:
+                raise GoogleCalendarServiceError(
+                    f"Failed to create event in Google Calendar: {str(exc)}"
+                ) from exc
+
+        # Find the calendar in the context's calendars
+        calendar_dict: Dict[str, Any] | None = None
+        for cal in event_context.calendars:
+            if cal.get("id") == calendar_id:
+                calendar_dict = cal
+                break
+        
+        if calendar_dict is None:
+            # Fallback if calendar not found in hydrated calendars
+            calendar_dict = {"id": calendar_id}
+        
+        # Build response payload similar to _build_event_payload
+        supabase_calendar = calendars_by_id.get(calendar_id)
+        return _build_event_payload(
+            created_event,
+            calendar_dict,
+            event_context,
+            supabase_calendar,
+        )
+
     async def _prepare_context(
         self, user_id: str
     ) -> Tuple[List[AccountContext], Dict[str, Dict[str, Any]]]:

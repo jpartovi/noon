@@ -102,3 +102,17 @@ class ScheduleResponse(BaseModel):
 class EventSurroundingScheduleResponse(BaseModel):
     event: EventDetail
     schedule: ScheduleResponse
+
+
+class CreateEventRequest(BaseModel):
+    summary: str = Field(..., min_length=1)
+    start: datetime
+    end: datetime
+    calendar_id: str = Field(..., min_length=1)
+    description: Optional[str] = None
+    location: Optional[str] = None
+    timezone: str = Field(default="UTC", min_length=1)
+
+
+class CreateEventResponse(BaseModel):
+    event: CalendarEvent

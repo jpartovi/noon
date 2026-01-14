@@ -14,6 +14,7 @@ protocol CalendarServicing {
     func fetchCalendars(accessToken: String) async throws -> [GoogleAccount]
     func beginGoogleOAuth(accessToken: String) async throws -> GoogleOAuthStart
     func deleteCalendar(accessToken: String, accountId: String) async throws
+    func createEvent(accessToken: String, request: CreateEventRequest) async throws -> CalendarCreateEventResponse
 }
 
 final class CalendarService: CalendarServicing {
@@ -130,6 +131,55 @@ final class CalendarService: CalendarServicing {
                 throw calendarError
             }
             calendarLogger.error("❌ Network error when deleting calendar \(accountId, privacy: .private): \(String(describing: error))")
+            throw CalendarServiceError.network(error)
+        }
+    }
+
+    func createEvent(accessToken: String, request: CreateEventRequest) async throws -> CalendarCreateEventResponse {
+        var urlRequest = try makeRequest(path: "/api/v1/calendars/events", accessToken: accessToken, method: "POST")
+        
+        // Encode the request body
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        urlRequest.httpBody = try encoder.encode(request)
+        
+        do {
+            let (data, response) = try await urlSession.data(for: urlRequest)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                calendarLogger.error("❌ Non-HTTP response when creating event")
+                throw CalendarServiceError.http(-1)
+            }
+
+            guard 200..<300 ~= httpResponse.statusCode else {
+                if httpResponse.statusCode == 401 {
+                    calendarLogger.error("🚫 Unauthorized when creating event")
+                    throw CalendarServiceError.unauthorized
+                }
+                if let payload = String(data: data, encoding: .utf8) {
+                    calendarLogger.error("❌ HTTP \(httpResponse.statusCode) when creating event: \(payload, privacy: .private)")
+                } else {
+                    calendarLogger.error("❌ HTTP \(httpResponse.statusCode) when creating event with empty body")
+                }
+                throw CalendarServiceError.http(httpResponse.statusCode)
+            }
+
+            do {
+                let decoder = JSONDecoder()
+                decoder.keyDecodingStrategy = .convertFromSnakeCase
+                decoder.dateDecodingStrategy = .iso8601
+                let createResponse = try decoder.decode(CalendarCreateEventResponse.self, from: data)
+                calendarLogger.debug("✅ Created event: \(request.summary, privacy: .public)")
+                return createResponse
+            } catch {
+                calendarLogger.error("❌ Decoding error when creating event: \(String(describing: error))")
+                throw CalendarServiceError.decoding(error)
+            }
+        } catch {
+            if let calendarError = error as? CalendarServiceError {
+                throw calendarError
+            }
+            calendarLogger.error("❌ Network error when creating event: \(String(describing: error))")
             throw CalendarServiceError.network(error)
         }
     }

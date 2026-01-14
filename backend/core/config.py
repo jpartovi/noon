@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     google_oauth_scopes: list[str] = [
         "https://www.googleapis.com/auth/userinfo.email",
         "https://www.googleapis.com/auth/userinfo.profile",
-        "https://www.googleapis.com/auth/calendar.readonly",
+        "https://www.googleapis.com/auth/calendar",
     ]
 
     # LangGraph Agent configuration

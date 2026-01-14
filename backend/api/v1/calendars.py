@@ -18,6 +18,9 @@ from domains.calendars.schemas import (
     EventSurroundingScheduleResponse,
     ScheduleRequest,
     ScheduleResponse,
+    CreateEventRequest,
+    CreateEventResponse,
+    CalendarEvent,
 )
 from domains.calendars.service import CalendarService
 from domains.calendars.repository import CalendarRepository
@@ -267,6 +270,61 @@ async def get_schedule(
             current_user.id,
             payload.start_date,
             payload.end_date,
+        )
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.post("/events", response_model=CreateEventResponse, status_code=status.HTTP_201_CREATED)
+async def create_event(
+    payload: CreateEventRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> CreateEventResponse:
+    """Create a new event in Google Calendar."""
+    service = CalendarService()
+    try:
+        result = await service.create_event(
+            user_id=current_user.id,
+            calendar_id=payload.calendar_id,
+            summary=payload.summary,
+            start=payload.start,
+            end=payload.end,
+            description=payload.description,
+            location=payload.location,
+            timezone_name=payload.timezone,
+        )
+        return CreateEventResponse(event=CalendarEvent(**result))
+    except GoogleCalendarUserError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except GoogleCalendarAuthError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except GoogleCalendarAPIError as exc:
+        if exc.status_code == 403:
+            logger.warning(
+                "GOOGLE_CALENDAR_INSUFFICIENT_PERMISSIONS user=%s calendar=%s summary=%s",
+                current_user.id,
+                payload.calendar_id,
+                payload.summary,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions to create events. Please re-link your Google Calendar account with write permissions.",
+            ) from exc
+        logger.exception(
+            "GOOGLE_CALENDAR_API_ERROR user=%s calendar=%s summary=%s",
+            current_user.id,
+            payload.calendar_id,
+            payload.summary,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Google Calendar API error: {str(exc)}",
+        ) from exc
+    except GoogleCalendarServiceError as exc:
+        logger.exception(
+            "GOOGLE_CALENDAR_SERVICE_ERROR user=%s calendar=%s summary=%s",
+            current_user.id,
+            payload.calendar_id,
+            payload.summary,
         )
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 

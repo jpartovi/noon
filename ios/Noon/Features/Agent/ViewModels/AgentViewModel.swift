@@ -25,6 +25,7 @@ final class AgentViewModel: ObservableObject {
     @Published private(set) var isLoadingSchedule: Bool = false
     @Published private(set) var hasLoadedSchedule: Bool = false
     @Published private(set) var focusEvent: ScheduleFocusEvent?
+    @Published var pendingCreateEvent: CreateEventResponse?
 
     // Configuration for n-day schedule
     var numberOfDays: Int = 2
@@ -34,6 +35,7 @@ final class AgentViewModel: ObservableObject {
     private let service: AgentActionServicing
     private let transcriptionService: TranscriptionServicing
     private let scheduleService: GoogleCalendarScheduleServicing
+    private let calendarService: CalendarServicing
     private let showScheduleHandler: ShowScheduleActionHandling
     private let calendar: Calendar = Calendar.autoupdatingCurrent
     
@@ -49,6 +51,7 @@ final class AgentViewModel: ObservableObject {
         service: AgentActionServicing? = nil,
         transcriptionService: TranscriptionServicing? = nil,
         scheduleService: GoogleCalendarScheduleServicing? = nil,
+        calendarService: CalendarServicing? = nil,
         showScheduleHandler: ShowScheduleActionHandling? = nil,
         initialScheduleDate: Date = Date(),
         initialDisplayEvents: [DisplayEvent]? = nil
@@ -57,6 +60,7 @@ final class AgentViewModel: ObservableObject {
         self.service = service ?? AgentActionService()
         self.transcriptionService = transcriptionService ?? TranscriptionService()
         self.scheduleService = scheduleService ?? GoogleCalendarScheduleService()
+        self.calendarService = calendarService ?? CalendarService()
         self.showScheduleHandler = showScheduleHandler ?? ShowScheduleActionHandler()
         self.scheduleDate = calendar.startOfDay(for: initialScheduleDate)
         self.displayEvents = initialDisplayEvents ?? []
@@ -524,7 +528,85 @@ final class AgentViewModel: ObservableObject {
         self.focusEvent = focus
         hasLoadedSchedule = true
         
+        // Store the pending create event response for confirmation
+        self.pendingCreateEvent = response
+        
         print("Create event: Set schedule with \(displayEvents.count) events, scheduleDate: \(Self.iso8601DateFormatter.string(from: scheduleDate)), hasLoadedSchedule: \(hasLoadedSchedule)")
+    }
+
+    // MARK: - Event Confirmation
+    func confirmCreateEvent(accessToken: String?) async {
+        guard let pendingEvent = pendingCreateEvent else {
+            print("confirmCreateEvent: No pending event to confirm")
+            return
+        }
+        
+        let metadata = pendingEvent.metadata
+        let startDate = metadata.start.dateTime
+        let endDate = metadata.end.dateTime
+        let timezone = TimeZone.autoupdatingCurrent.identifier
+        
+        Task { @MainActor in
+            do {
+                let token = try await resolveAccessToken(initial: accessToken)
+                
+                // Create the event creation request
+                let createRequest = CreateEventRequest(
+                    summary: metadata.summary,
+                    start: startDate,
+                    end: endDate,
+                    calendarId: metadata.calendar_id,
+                    description: metadata.description,
+                    location: metadata.location,
+                    timezone: timezone
+                )
+                
+                // Call the calendar service to create the event
+                let createdResponse = try await calendarService.createEvent(
+                    accessToken: token,
+                    request: createRequest
+                )
+                
+                // Clear pending event first
+                pendingCreateEvent = nil
+                
+                // Reload the schedule to get the real event from Google Calendar
+                // This ensures the event displays properly without the .new style
+                let createdEvent = createdResponse.event
+                let createdEventID = createdEvent.id
+                let eventDay = calendar.startOfDay(for: startDate)
+                
+                // Reload schedule for the day of the created event
+                // No focus event - display normally without special styling
+                loadSchedule(
+                    for: eventDay,
+                    force: true,
+                    accessToken: token,
+                    focusEvent: nil
+                )
+                
+                print("confirmCreateEvent: Successfully created event \(createdEventID) and reloaded schedule")
+            } catch {
+                print("confirmCreateEvent: Error creating event: \(error)")
+                handle(error: error)
+            }
+        }
+    }
+    
+    func cancelCreateEvent() {
+        guard pendingCreateEvent != nil else { return }
+        
+        // Remove the temporary event from display events
+        if let tempEventID = focusEvent?.eventID,
+           let tempEventIndex = displayEvents.firstIndex(where: { $0.event.id == tempEventID }) {
+            displayEvents.remove(at: tempEventIndex)
+            focusEvent = nil
+        }
+        
+        // Clear pending event
+        pendingCreateEvent = nil
+        
+        print("cancelCreateEvent: Cancelled pending event creation")
     }
 
     // MARK: - Show Schedule Handling

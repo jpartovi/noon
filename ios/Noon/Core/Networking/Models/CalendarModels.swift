@@ -245,3 +245,27 @@ enum GoogleCalendarScheduleServiceError: LocalizedError {
         }
     }
 }
+
+struct CreateEventRequest: Encodable {
+    let summary: String
+    let start: Date
+    let end: Date
+    let calendarId: String
+    let description: String?
+    let location: String?
+    let timezone: String
+
+    enum CodingKeys: String, CodingKey {
+        case summary
+        case start
+        case end
+        case calendarId = "calendar_id"
+        case description
+        case location
+        case timezone
+    }
+}
+
+struct CalendarCreateEventResponse: Decodable {
+    let event: CalendarEvent
+}

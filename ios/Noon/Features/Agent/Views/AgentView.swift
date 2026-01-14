@@ -13,6 +13,7 @@ struct AgentView: View {
 
     @EnvironmentObject private var authViewModel: AuthViewModel
     @State private var isLoading = false
+    @State private var isCreatingEvent = false
     @State private var didConfigureViewModel = false
 
     var body: some View {
@@ -37,7 +38,16 @@ struct AgentView: View {
                 Color.clear
                     .frame(height: 24)
 
-                microphoneButton
+                ZStack(alignment: .center) {
+                    microphoneButton
+                    
+                    if viewModel.pendingCreateEvent != nil {
+                        confirmationButton
+                            .offset(x: 150) // Position to the right: mic center (0) + half mic width (98) + spacing (24) + half checkmark (28) = 150
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 24)
             }
         }
         .onReceive(viewModel.$displayState) { state in
@@ -96,6 +106,49 @@ struct AgentView: View {
             perform: {}
         )
         .padding(.bottom, 20)
+    }
+
+    private var confirmationButton: some View {
+        Button {
+            isCreatingEvent = true
+            Task {
+                await viewModel.confirmCreateEvent(accessToken: authViewModel.session?.accessToken)
+                isCreatingEvent = false
+            }
+        } label: {
+            // Gradient stroke using two-circle technique
+            ZStack {
+                // Outer circle with gradient (creates the stroke effect)
+                Circle()
+                    .fill(ColorPalette.Gradients.primary)
+                    .frame(width: 56, height: 56)
+                
+                // Inner circle with background to create transparent-looking interior
+                Circle()
+                    .fill(ColorPalette.Gradients.backgroundBase)
+                    .frame(width: 52, height: 52)
+            }
+            .shadow(
+                color: ColorPalette.Semantic.primary.opacity(0.35),
+                radius: 18,
+                x: 0,
+                y: 10
+            )
+            .overlay {
+                if isCreatingEvent {
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                        .tint(ColorPalette.Semantic.primary)
+                } else {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(ColorPalette.Gradients.primary)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .padding(.bottom, 20)
+        .disabled(isCreatingEvent)
     }
 
     private func handleDisplayStateChange(_ state: AgentViewModel.DisplayState) {

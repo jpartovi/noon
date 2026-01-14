@@ -164,11 +164,8 @@ private extension CalendarAccountsView {
         VStack(spacing: 12) {
             Image(systemName: "calendar.badge.exclamationmark")
                 .imageScale(.large)
-                .foregroundStyle(ColorPalette.Semantic.secondary)
+                .foregroundStyle(ColorPalette.Semantic.primary)
             Text("No calendar accounts connected yet")
-                .font(.headline)
-                .foregroundStyle(ColorPalette.Text.primary)
-            Text("Connect a calendar account to get started.")
                 .font(.subheadline)
                 .foregroundStyle(ColorPalette.Text.secondary)
         }
@@ -279,6 +276,23 @@ private final class MockCalendarService: CalendarServicing {
 
     func deleteCalendar(accessToken: String, accountId: String) async throws {
         accounts.removeAll { $0.id == accountId }
+    }
+
+    func createEvent(accessToken: String, request: CreateEventRequest) async throws -> CalendarCreateEventResponse {
+        // Mock implementation - return a mock event
+        let mockEvent = CalendarEvent(
+            id: UUID().uuidString,
+            title: request.summary,
+            description: request.description,
+            start: CalendarEvent.EventDateTime(dateTime: request.start, date: nil, timeZone: request.timezone),
+            end: CalendarEvent.EventDateTime(dateTime: request.end, date: nil, timeZone: request.timezone),
+            attendees: [],
+            createdBy: nil,
+            calendarId: request.calendarId,
+            location: request.location,
+            conference: nil
+        )
+        return CalendarCreateEventResponse(event: mockEvent)
     }
 }
 
