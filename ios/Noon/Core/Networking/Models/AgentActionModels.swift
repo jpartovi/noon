@@ -7,6 +7,19 @@
 
 import Foundation
 
+struct AgentActionRequest {
+    let fileURL: URL
+    
+    init(fileURL: URL) {
+        self.fileURL = fileURL
+    }
+    
+    var filename: String {
+        let name = fileURL.lastPathComponent
+        return name.isEmpty ? "recording.wav" : name
+    }
+}
+
 struct AgentActionResult {
     let statusCode: Int
     let data: Data

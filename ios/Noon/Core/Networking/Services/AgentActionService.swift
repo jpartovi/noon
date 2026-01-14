@@ -8,7 +8,7 @@
 import Foundation
 
 protocol AgentActionServicing {
-    func performAgentAction(fileURL: URL, accessToken: String) async throws -> AgentActionResult
+    func performAgentAction(request: AgentActionRequest, accessToken: String) async throws -> AgentActionResult
 }
 
 struct AgentActionService: AgentActionServicing {
@@ -18,23 +18,23 @@ struct AgentActionService: AgentActionServicing {
         case decodingFailed(underlying: Error)
     }
 
-    func performAgentAction(fileURL: URL, accessToken: String) async throws -> AgentActionResult {
+    func performAgentAction(request: AgentActionRequest, accessToken: String) async throws -> AgentActionResult {
         let baseURL = AppConfiguration.agentBaseURL
         guard let endpoint = URL(string: "/api/v1/agent/action", relativeTo: baseURL) else {
             throw ServiceError.invalidURL
         }
 
-        var request = URLRequest(url: endpoint)
-        request.httpMethod = "POST"
-        request.addValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        var urlRequest = URLRequest(url: endpoint)
+        urlRequest.httpMethod = "POST"
+        urlRequest.addValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
 
         let boundary = UUID().uuidString
-        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        urlRequest.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
 
-        let bodyData = try buildMultipartBody(fileURL: fileURL, boundary: boundary)
-        request.httpBody = bodyData
+        let bodyData = try buildMultipartBody(request: request, boundary: boundary)
+        urlRequest.httpBody = bodyData
 
-        let (data, response) = try await NetworkSession.shared.data(for: request)
+        let (data, response) = try await NetworkSession.shared.data(for: urlRequest)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw ServiceError.unexpectedResponse
@@ -48,6 +48,7 @@ struct AgentActionService: AgentActionServicing {
 
         do {
             let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
             let agentResponse = try decoder.decode(AgentResponse.self, from: data)
 
             return AgentActionResult(statusCode: statusCode, data: data, agentResponse: agentResponse)
@@ -58,13 +59,12 @@ struct AgentActionService: AgentActionServicing {
 }
 
 private extension AgentActionService {
-    func buildMultipartBody(fileURL: URL, boundary: String) throws -> Data {
+    func buildMultipartBody(request: AgentActionRequest, boundary: String) throws -> Data {
         var body = Data()
-        let filename = fileURL.lastPathComponent.isEmpty ? "recording.wav" : fileURL.lastPathComponent
-        let fileData = try Data(contentsOf: fileURL)
+        let fileData = try Data(contentsOf: request.fileURL)
 
         body.append("--\(boundary)\r\n")
-        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n")
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(request.filename)\"\r\n")
         body.append("Content-Type: audio/wav\r\n\r\n")
         body.append(fileData)
         body.append("\r\n")

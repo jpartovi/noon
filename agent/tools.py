@@ -6,6 +6,21 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional
 from langchain_core.tools import tool
 from agent.calendar_client import create_calendar_client
+from agent.schemas.agent_response import (
+    ShowScheduleResponse,
+    ShowScheduleMetadata,
+    ShowEventResponse,
+    ShowEventMetadata,
+    CreateEventResponse,
+    CreateEventMetadata,
+    DateTimeDict,
+    UpdateEventResponse,
+    UpdateEventMetadata,
+    DeleteEventResponse,
+    DeleteEventMetadata,
+    NoActionResponse,
+    NoActionMetadata,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -228,13 +243,17 @@ def show_schedule(start_time: str, end_time: str) -> Dict[str, Any]:
     Returns:
         Dict with type "show-schedule" and metadata
     """
-    return {
-        "type": "show-schedule",
-        "metadata": {
-            "start-date": start_time,
-            "end-date": end_time,
-        },
-    }
+    # Parse datetime strings to datetime objects
+    start_dt = datetime.fromisoformat(start_time)
+    end_dt = datetime.fromisoformat(end_time)
+    
+    response = ShowScheduleResponse(
+        metadata=ShowScheduleMetadata(
+            start_date=start_dt,
+            end_date=end_dt,
+        )
+    )
+    return response.model_dump()
 
 
 @tool
@@ -249,13 +268,13 @@ def show_event(event_id: str, calendar_id: str) -> Dict[str, Any]:
     Returns:
         Dict with type "show-event" and metadata
     """
-    return {
-        "type": "show-event",
-        "metadata": {
-            "event-id": event_id,
-            "calendar-id": calendar_id,
-        },
-    }
+    response = ShowEventResponse(
+        metadata=ShowEventMetadata(
+            event_id=event_id,
+            calendar_id=calendar_id,
+        )
+    )
+    return response.model_dump()
 
 
 @tool
@@ -281,22 +300,21 @@ def request_create_event(
     Returns:
         Dict with type "create-event" and metadata
     """
-    metadata = {
-        "summary": summary,
-        "start": {"dateTime": start_time},
-        "end": {"dateTime": end_time},
-        "calendar_id": calendar_id,
-    }
+    # Parse datetime strings to datetime objects
+    start_dt = datetime.fromisoformat(start_time)
+    end_dt = datetime.fromisoformat(end_time)
     
-    if description:
-        metadata["description"] = description
-    if location:
-        metadata["location"] = location
+    metadata = CreateEventMetadata(
+        summary=summary,
+        start=DateTimeDict(dateTime=start_dt),
+        end=DateTimeDict(dateTime=end_dt),
+        calendar_id=calendar_id,
+        description=description,
+        location=location,
+    )
     
-    return {
-        "type": "create-event",
-        "metadata": metadata,
-    }
+    response = CreateEventResponse(metadata=metadata)
+    return response.model_dump()
 
 
 @tool
@@ -324,26 +342,26 @@ def request_update_event(
     Returns:
         Dict with type "update-event" and metadata
     """
-    metadata = {
-        "event-id": event_id,
-        "calendar-id": calendar_id,
-    }
-    
-    if summary:
-        metadata["summary"] = summary
+    # Parse datetime strings to datetime objects if provided
+    start_dt = None
+    end_dt = None
     if start_time:
-        metadata["start"] = {"dateTime": start_time}
+        start_dt = DateTimeDict(dateTime=datetime.fromisoformat(start_time))
     if end_time:
-        metadata["end"] = {"dateTime": end_time}
-    if description:
-        metadata["description"] = description
-    if location:
-        metadata["location"] = location
+        end_dt = DateTimeDict(dateTime=datetime.fromisoformat(end_time))
     
-    return {
-        "type": "update-event",
-        "metadata": metadata,
-    }
+    metadata = UpdateEventMetadata(
+        event_id=event_id,
+        calendar_id=calendar_id,
+        summary=summary,
+        start=start_dt,
+        end=end_dt,
+        description=description,
+        location=location,
+    )
+    
+    response = UpdateEventResponse(metadata=metadata)
+    return response.model_dump()
 
 
 @tool
@@ -358,13 +376,13 @@ def request_delete_event(event_id: str, calendar_id: str) -> Dict[str, Any]:
     Returns:
         Dict with type "delete-event" and metadata
     """
-    return {
-        "type": "delete-event",
-        "metadata": {
-            "event-id": event_id,
-            "calendar-id": calendar_id,
-        },
-    }
+    response = DeleteEventResponse(
+        metadata=DeleteEventMetadata(
+            event_id=event_id,
+            calendar_id=calendar_id,
+        )
+    )
+    return response.model_dump()
 
 
 @tool
@@ -379,12 +397,10 @@ def do_nothing(reason: str) -> Dict[str, Any]:
     Returns:
         Dict with type "no-action" and metadata
     """
-    return {
-        "type": "no-action",
-        "metadata": {
-            "reason": reason,
-        },
-    }
+    response = NoActionResponse(
+        metadata=NoActionMetadata(reason=reason)
+    )
+    return response.model_dump()
 
 
 # Lists of tools for easy access

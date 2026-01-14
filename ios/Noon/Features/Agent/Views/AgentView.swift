@@ -106,9 +106,8 @@ struct AgentView: View {
             isLoading = true
         case .completed:
             isLoading = false
-        case .failed(let message):
+        case .failed(_):
             isLoading = false
-            print("[Agent] Agent call failed: \(message)")
         case .idle:
             isLoading = false
         }

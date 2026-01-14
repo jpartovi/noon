@@ -73,7 +73,7 @@ final class AgentViewModel: ObservableObject {
         Task { @MainActor in
             do {
                 try await recorder.startRecording()
-                print("[Agent] Recording started")
+                print("Recording started")
             } catch {
                 handle(error: error)
             }
@@ -87,7 +87,7 @@ final class AgentViewModel: ObservableObject {
 
         Task { @MainActor in
             do {
-                print("[Agent] Stopping recording and sending to agent…")
+                print("Stopping recording and sending to agent…")
                 guard let recording = try await recorder.stopRecording() else {
                     displayState = .idle
                     return
@@ -97,8 +97,8 @@ final class AgentViewModel: ObservableObject {
                 let startingToken = try await resolveAccessToken(initial: accessToken)
 
                 displayState = .uploading
-                print("[Agent] Recorded audio duration: \(recording.duration)s")
-                print("[Agent] Uploading audio to /agent/action…")
+                print("Recorded audio duration: \(recording.duration)s")
+                print("Uploading audio to /agent/action…")
 
                 let (result, tokenUsed) = try await sendRecording(
                     recording: recording,
@@ -110,9 +110,9 @@ final class AgentViewModel: ObservableObject {
                 displayState = .completed(result: result)
 
                 if let responseString = result.responseString {
-                    print("[Agent] Agent response (\(result.statusCode)): \(responseString)")
+                    print("Agent response (\(result.statusCode)): \(responseString)")
                 } else {
-                    print("[Agent] Agent response (\(result.statusCode)) received (\(result.data.count) bytes)")
+                    print("Agent response (\(result.statusCode)) received (\(result.data.count) bytes)")
                 }
             } catch {
                 handle(error: error)
@@ -129,9 +129,9 @@ final class AgentViewModel: ObservableObject {
         displayState = .failed(message: localizedMessage(for: error))
         isRecording = false
         if let serverError = error as? ServerError {
-            print("[Agent] Transcription failed (\(serverError.statusCode)): \(serverError.message)")
+            print("Transcription failed (\(serverError.statusCode)): \(serverError.message)")
         } else {
-            print("[Agent] Transcription failed: \(error.localizedDescription)")
+            print("Transcription failed: \(error.localizedDescription)")
         }
     }
 
@@ -146,10 +146,17 @@ final class AgentViewModel: ObservableObject {
         accessToken initialToken: String? = nil,
         focusEvent: ScheduleFocusEvent? = nil
     ) {
-        guard isLoadingSchedule == false else { return }
-        if force == false, calendar.isDate(scheduleDate, inSameDayAs: date), isLoadingSchedule {
+        guard isLoadingSchedule == false else {
+            print("loadSchedule: Already loading, skipping")
             return
         }
+        if force == false, calendar.isDate(scheduleDate, inSameDayAs: date), isLoadingSchedule {
+            print("loadSchedule: Same date and not forced, skipping")
+            return
+        }
+
+        let dateString = Self.iso8601DateFormatter.string(from: date)
+        print("loadSchedule: Loading schedule for date: \(dateString), force: \(force)")
 
         Task { @MainActor in
             isLoadingSchedule = true
@@ -163,6 +170,8 @@ final class AgentViewModel: ObservableObject {
                 let startDateISO = Self.iso8601DateFormatter.string(from: dateRange.start)
                 let endDateISO = Self.iso8601DateFormatter.string(from: dateRange.end)
                 
+                print("loadSchedule: Fetching events from \(startDateISO) to \(endDateISO)")
+                
                 let token = try await resolveAccessToken(initial: initialToken)
                 let events = try await fetchScheduleEvents(
                     startDateISO: startDateISO,
@@ -170,11 +179,14 @@ final class AgentViewModel: ObservableObject {
                     accessToken: token
                 )
 
+                print("loadSchedule: Loaded \(events.count) events")
                 scheduleDate = dateRange.start
                 displayEvents = events
                 self.focusEvent = focusEvent
                 hasLoadedSchedule = true
+                print("loadSchedule: hasLoadedSchedule set to true, scheduleDate: \(Self.iso8601DateFormatter.string(from: scheduleDate)), displayEvents count: \(displayEvents.count), focusEvent: \(focusEvent?.eventID ?? "nil")")
             } catch {
+                print("loadSchedule: Error loading schedule: \(error)")
                 handle(error: error)
             }
         }
@@ -206,6 +218,8 @@ final class AgentViewModel: ObservableObject {
         switch agentResponse {
         case .showEvent(let response):
             try await handleShowEvent(response: response, accessToken: accessToken)
+        case .showSchedule:
+            try await handleShowSchedule(agentResponse: agentResponse, accessToken: accessToken)
         default:
             // TODO: Handle additional agent response types
             break
@@ -230,20 +244,22 @@ final class AgentViewModel: ObservableObject {
         accessToken: String
     ) async throws -> (AgentActionResult, String) {
         // Try the request first
+        let request = AgentActionRequest(fileURL: recording.fileURL)
+        
         do {
             let result = try await service.performAgentAction(
-                fileURL: recording.fileURL,
+                request: request,
                 accessToken: accessToken
             )
             return (result, accessToken)
         } catch let error as ServerError where error.statusCode == 401 {
             // Token expired - refresh and retry once
-            print("[Agent] Got 401, refreshing token and retrying...")
+            print("Got 401, refreshing token and retrying...")
             guard let refreshedToken = await AuthTokenProvider.shared.currentAccessToken() else {
                 throw AccessTokenError.missingAuthProvider
             }
             let result = try await service.performAgentAction(
-                fileURL: recording.fileURL,
+                request: request,
                 accessToken: refreshedToken
             )
             return (result, refreshedToken)
@@ -265,7 +281,7 @@ final class AgentViewModel: ObservableObject {
             return schedule.events.map { DisplayEvent(event: $0) }
         } catch GoogleCalendarScheduleServiceError.unauthorized {
             // Token expired - refresh and retry once
-            print("[Agent] Got 401 fetching schedule, refreshing token and retrying...")
+            print("Got 401 fetching schedule, refreshing token and retrying...")
             guard let refreshedToken = await AuthTokenProvider.shared.currentAccessToken() else {
                 throw AccessTokenError.missingAuthProvider
             }
@@ -278,31 +294,56 @@ final class AgentViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Show Event Handling (Mock)
+    // MARK: - Show Event Handling
     private func handleShowEvent(response: ShowEventResponse, accessToken: String) async throws {
-        let eventID = response.metadata.eventID
-        let calendarID = response.metadata.calendarID
-        let day = try await getDayOfEvent(eventID: eventID, calendarID: calendarID, accessToken: accessToken)
-        let focus = ScheduleFocusEvent(eventID: eventID, style: .highlight)
-        loadSchedule(
-            for: day,
-            force: true,
-            accessToken: accessToken,
-            focusEvent: focus
+        let eventID = response.metadata.event_id
+        let calendarID = response.metadata.calendar_id
+        let timezone = TimeZone.autoupdatingCurrent.identifier
+        
+        let schedule = try await scheduleService.fetchEventSurroundingSchedule(
+            eventID: eventID,
+            calendarID: calendarID,
+            timezone: timezone,
+            accessToken: accessToken
         )
+        
+        // Find the event in the schedule to get its start date
+        guard let targetEvent = schedule.events.first(where: { $0.id == eventID }),
+              let eventStartDate = targetEvent.start?.dateTime else {
+            print("ERROR: Could not find event \(eventID) in schedule or event has no start date")
+            throw NSError(domain: "AgentViewModel", code: 1, userInfo: [NSLocalizedDescriptionKey: "Event not found in schedule"])
+        }
+        
+        // Use the day of the event's start date
+        let eventDay = calendar.startOfDay(for: eventStartDate)
+        let dateString = Self.iso8601DateFormatter.string(from: eventDay)
+        print("Show event called for event: \(eventID), day: \(dateString)")
+        
+        // Use the events from the surrounding schedule directly
+        let displayEvents = schedule.events.map { DisplayEvent(event: $0) }
+        let focus = ScheduleFocusEvent(eventID: eventID, style: .highlight)
+        
+        // Update the schedule state directly
+        let dateRange = self.dateRange(for: eventDay)
+        scheduleDate = dateRange.start
+        self.displayEvents = displayEvents
+        self.focusEvent = focus
+        hasLoadedSchedule = true
+        
+        print("Show event: Set schedule with \(displayEvents.count) events, scheduleDate: \(Self.iso8601DateFormatter.string(from: scheduleDate)), hasLoadedSchedule: \(hasLoadedSchedule)")
     }
 
-    private func getDayOfEvent(
-        eventID: String,
-        calendarID: String,
-        accessToken: String
-    ) async throws -> Date {
-        // TODO: Replace with lookup to Google Calendar event (by id) to derive start date
-        var components = DateComponents()
-        components.year = 2025
-        components.month = 11
-        components.day = 22
-        return calendar.date(from: components) ?? calendar.startOfDay(for: Date())
+    // MARK: - Show Schedule Handling
+    private func handleShowSchedule(agentResponse: AgentResponse, accessToken: String) async throws {
+        let config = showScheduleHandler.configuration(for: agentResponse)
+        let dateString = Self.iso8601DateFormatter.string(from: config.date)
+        print("Show schedule called for day: \(dateString)")
+        loadSchedule(
+            for: config.date,
+            force: true,
+            accessToken: accessToken,
+            focusEvent: config.focusEvent
+        )
     }
 
     private enum AccessTokenError: Error {

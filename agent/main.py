@@ -9,6 +9,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage, SystemMessage
 
 from agent.tools import ALL_TOOLS, INTERNAL_TOOLS, EXTERNAL_TOOLS, set_auth_context
+from agent.schemas.agent_response import ErrorResponse
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +72,7 @@ class OutputState(TypedDict):
     ]]
     metadata: Dict[str, Any]
     message: Optional[str]  # For error responses
+    query: str  # The transcribed text that was passed to the agent
 
 
 def agent_node(state: State) -> Dict[str, Any]:
@@ -405,41 +407,38 @@ def format_response_node(state: State) -> Dict[str, Any]:
     terminated = state.get("terminated", False)
     success = state.get("success", True)
     message = state.get("message")
+    query = state.get("query", "")
     
     logger.info("Formatting response node")
     logger.info(f"State keys: {list(state.keys())}")
+    logger.info(f"Query from state: {query}")
     logger.info(f"External tool result: {external_tool_result}")
     logger.info(f"Success: {success}, Message: {message}")
     
     # Check if we have an error
     if not success and message:
         logger.info(f"Returning error response: {message}")
-        return {
-            "success": False,
-            "message": message,
-        }
+        error_response = ErrorResponse(message=message, query=query)
+        return error_response.model_dump()
     
     # Check if we have an external tool result
+    # Tools now return properly formatted response dicts via .model_dump()
+    # which already include success, type, and metadata fields
     if external_tool_result:
         response_type = external_tool_result.get("type")
-        metadata = external_tool_result.get("metadata", {})
-        
-        # Return with type to match OutputState
-        response = {
-            "success": True,
-            "type": response_type,
-            "metadata": metadata,
-        }
         logger.info(f"Formatted response: {response_type}")
-        return response
+        # Add query to the external tool result dict
+        external_tool_result["query"] = query
+        return external_tool_result
     
     # Fallback: should not happen if agent is working correctly
     # Return error instead of no-action
     logger.error("No external tool result and no error - this should not happen")
-    return {
-        "success": False,
-        "message": "Agent failed to produce a valid response. No tool was called to handle the query.",
-    }
+    error_response = ErrorResponse(
+        message="Agent failed to produce a valid response. No tool was called to handle the query.",
+        query=query
+    )
+    return error_response.model_dump()
 
 
 def should_continue(state: State) -> str:

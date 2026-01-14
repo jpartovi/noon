@@ -26,10 +26,32 @@ enum AgentResponseKind: String, Codable, Sendable {
 struct AgentErrorResponse: Codable, Sendable, Error {
     let success: Bool
     let message: String
+    let query: String?
 
-    init(message: String) {
+    init(message: String, query: String? = nil) {
         self.success = false
         self.message = message
+        self.query = query
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.success = try container.decode(Bool.self, forKey: .success)
+        self.message = try container.decode(String.self, forKey: .message)
+        self.query = try container.decodeIfPresent(String.self, forKey: .query)
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(success, forKey: .success)
+        try container.encode(message, forKey: .message)
+        try container.encodeIfPresent(query, forKey: .query)
+    }
+    
+    private enum CodingKeys: String, CodingKey {
+        case success
+        case message
+        case query
     }
 }
 
@@ -96,19 +118,22 @@ struct ShowEventResponse: AgentSuccessResponse, Codable {
     let success: Bool
     let type: AgentResponseKind
     let metadata: ShowEventMetadata
+    let query: String
 
     typealias Metadata = ShowEventMetadata
 
-    init(metadata: ShowEventMetadata) {
+    init(metadata: ShowEventMetadata, query: String) {
         self.success = true
         self.type = .showEvent
         self.metadata = metadata
+        self.query = query
     }
 
-    init(success: Bool, metadata: ShowEventMetadata) {
+    init(success: Bool, metadata: ShowEventMetadata, query: String) {
         self.success = success
         self.type = .showEvent
         self.metadata = metadata
+        self.query = query
     }
 
     init(from decoder: Decoder) throws {
@@ -120,6 +145,7 @@ struct ShowEventResponse: AgentSuccessResponse, Codable {
         self.success = try container.decode(Bool.self, forKey: .success)
         self.type = decodedType
         self.metadata = try container.decode(ShowEventMetadata.self, forKey: .metadata)
+        self.query = try container.decode(String.self, forKey: .query)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -127,12 +153,14 @@ struct ShowEventResponse: AgentSuccessResponse, Codable {
         try container.encode(success, forKey: .success)
         try container.encode(type, forKey: .type)
         try container.encode(metadata, forKey: .metadata)
+        try container.encode(query, forKey: .query)
     }
 
     private enum CodingKeys: String, CodingKey {
         case success
         case type
         case metadata
+        case query
     }
 }
 
@@ -140,19 +168,22 @@ struct ShowScheduleResponse: AgentSuccessResponse, Codable {
     let success: Bool
     let type: AgentResponseKind
     let metadata: ShowScheduleMetadata
+    let query: String
 
     typealias Metadata = ShowScheduleMetadata
 
-    init(metadata: ShowScheduleMetadata) {
+    init(metadata: ShowScheduleMetadata, query: String) {
         self.success = true
         self.type = .showSchedule
         self.metadata = metadata
+        self.query = query
     }
 
-    init(success: Bool, metadata: ShowScheduleMetadata) {
+    init(success: Bool, metadata: ShowScheduleMetadata, query: String) {
         self.success = success
         self.type = .showSchedule
         self.metadata = metadata
+        self.query = query
     }
 
     init(from decoder: Decoder) throws {
@@ -164,6 +195,7 @@ struct ShowScheduleResponse: AgentSuccessResponse, Codable {
         self.success = try container.decode(Bool.self, forKey: .success)
         self.type = decodedType
         self.metadata = try container.decode(ShowScheduleMetadata.self, forKey: .metadata)
+        self.query = try container.decode(String.self, forKey: .query)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -171,12 +203,14 @@ struct ShowScheduleResponse: AgentSuccessResponse, Codable {
         try container.encode(success, forKey: .success)
         try container.encode(type, forKey: .type)
         try container.encode(metadata, forKey: .metadata)
+        try container.encode(query, forKey: .query)
     }
 
     private enum CodingKeys: String, CodingKey {
         case success
         case type
         case metadata
+        case query
     }
 }
 
@@ -184,19 +218,22 @@ struct CreateEventResponse: AgentSuccessResponse, Codable {
     let success: Bool
     let type: AgentResponseKind
     let metadata: CreateEventMetadata
+    let query: String
 
     typealias Metadata = CreateEventMetadata
 
-    init(metadata: CreateEventMetadata) {
+    init(metadata: CreateEventMetadata, query: String) {
         self.success = true
         self.type = .createEvent
         self.metadata = metadata
+        self.query = query
     }
 
-    init(success: Bool, metadata: CreateEventMetadata) {
+    init(success: Bool, metadata: CreateEventMetadata, query: String) {
         self.success = success
         self.type = .createEvent
         self.metadata = metadata
+        self.query = query
     }
 
     init(from decoder: Decoder) throws {
@@ -208,6 +245,7 @@ struct CreateEventResponse: AgentSuccessResponse, Codable {
         self.success = try container.decode(Bool.self, forKey: .success)
         self.type = decodedType
         self.metadata = try container.decode(CreateEventMetadata.self, forKey: .metadata)
+        self.query = try container.decode(String.self, forKey: .query)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -215,12 +253,14 @@ struct CreateEventResponse: AgentSuccessResponse, Codable {
         try container.encode(success, forKey: .success)
         try container.encode(type, forKey: .type)
         try container.encode(metadata, forKey: .metadata)
+        try container.encode(query, forKey: .query)
     }
 
     private enum CodingKeys: String, CodingKey {
         case success
         case type
         case metadata
+        case query
     }
 }
 
@@ -228,19 +268,22 @@ struct UpdateEventResponse: AgentSuccessResponse, Codable {
     let success: Bool
     let type: AgentResponseKind
     let metadata: UpdateEventMetadata
+    let query: String
 
     typealias Metadata = UpdateEventMetadata
 
-    init(metadata: UpdateEventMetadata) {
+    init(metadata: UpdateEventMetadata, query: String) {
         self.success = true
         self.type = .updateEvent
         self.metadata = metadata
+        self.query = query
     }
 
-    init(success: Bool, metadata: UpdateEventMetadata) {
+    init(success: Bool, metadata: UpdateEventMetadata, query: String) {
         self.success = success
         self.type = .updateEvent
         self.metadata = metadata
+        self.query = query
     }
 
     init(from decoder: Decoder) throws {
@@ -252,6 +295,7 @@ struct UpdateEventResponse: AgentSuccessResponse, Codable {
         self.success = try container.decode(Bool.self, forKey: .success)
         self.type = decodedType
         self.metadata = try container.decode(UpdateEventMetadata.self, forKey: .metadata)
+        self.query = try container.decode(String.self, forKey: .query)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -259,12 +303,14 @@ struct UpdateEventResponse: AgentSuccessResponse, Codable {
         try container.encode(success, forKey: .success)
         try container.encode(type, forKey: .type)
         try container.encode(metadata, forKey: .metadata)
+        try container.encode(query, forKey: .query)
     }
 
     private enum CodingKeys: String, CodingKey {
         case success
         case type
         case metadata
+        case query
     }
 }
 
@@ -272,19 +318,22 @@ struct DeleteEventResponse: AgentSuccessResponse, Codable {
     let success: Bool
     let type: AgentResponseKind
     let metadata: DeleteEventMetadata
+    let query: String
 
     typealias Metadata = DeleteEventMetadata
 
-    init(metadata: DeleteEventMetadata) {
+    init(metadata: DeleteEventMetadata, query: String) {
         self.success = true
         self.type = .deleteEvent
         self.metadata = metadata
+        self.query = query
     }
 
-    init(success: Bool, metadata: DeleteEventMetadata) {
+    init(success: Bool, metadata: DeleteEventMetadata, query: String) {
         self.success = success
         self.type = .deleteEvent
         self.metadata = metadata
+        self.query = query
     }
 
     init(from decoder: Decoder) throws {
@@ -296,6 +345,7 @@ struct DeleteEventResponse: AgentSuccessResponse, Codable {
         self.success = try container.decode(Bool.self, forKey: .success)
         self.type = decodedType
         self.metadata = try container.decode(DeleteEventMetadata.self, forKey: .metadata)
+        self.query = try container.decode(String.self, forKey: .query)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -303,12 +353,14 @@ struct DeleteEventResponse: AgentSuccessResponse, Codable {
         try container.encode(success, forKey: .success)
         try container.encode(type, forKey: .type)
         try container.encode(metadata, forKey: .metadata)
+        try container.encode(query, forKey: .query)
     }
 
     private enum CodingKeys: String, CodingKey {
         case success
         case type
         case metadata
+        case query
     }
 }
 
@@ -316,19 +368,22 @@ struct NoActionResponse: AgentSuccessResponse, Codable {
     let success: Bool
     let type: AgentResponseKind
     let metadata: NoActionMetadata
+    let query: String
 
     typealias Metadata = NoActionMetadata
 
-    init(metadata: NoActionMetadata) {
+    init(metadata: NoActionMetadata, query: String) {
         self.success = true
         self.type = .noAction
         self.metadata = metadata
+        self.query = query
     }
 
-    init(success: Bool, metadata: NoActionMetadata) {
+    init(success: Bool, metadata: NoActionMetadata, query: String) {
         self.success = success
         self.type = .noAction
         self.metadata = metadata
+        self.query = query
     }
 
     init(from decoder: Decoder) throws {
@@ -340,6 +395,7 @@ struct NoActionResponse: AgentSuccessResponse, Codable {
         self.success = try container.decode(Bool.self, forKey: .success)
         self.type = decodedType
         self.metadata = try container.decode(NoActionMetadata.self, forKey: .metadata)
+        self.query = try container.decode(String.self, forKey: .query)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -347,110 +403,84 @@ struct NoActionResponse: AgentSuccessResponse, Codable {
         try container.encode(success, forKey: .success)
         try container.encode(type, forKey: .type)
         try container.encode(metadata, forKey: .metadata)
+        try container.encode(query, forKey: .query)
     }
 
     private enum CodingKeys: String, CodingKey {
         case success
         case type
         case metadata
+        case query
     }
 }
 
 // MARK: - Metadata
 
 struct ShowEventMetadata: Codable, Sendable {
-    let eventID: String
-    let calendarID: String
+    let event_id: String
+    let calendar_id: String
 
     private enum CodingKeys: String, CodingKey {
-        case eventID = "event-id"
-        case calendarID = "calendar-id"
+        case event_id
+        case calendar_id
     }
 }
 
 struct ShowScheduleMetadata: Codable, Sendable {
-    let startDateISO: String
-    let endDateISO: String
+    let start_date: String
+    let end_date: String
 
     private enum CodingKeys: String, CodingKey {
-        case startDateISO = "start-date"
-        case endDateISO = "end-date"
+        case start_date
+        case end_date
     }
 }
 
 struct CreateEventMetadata: Codable, Sendable {
-    let payload: [String: AgentJSONValue]
+    let summary: String
+    let start: DateTimeDict
+    let end: DateTimeDict
+    let calendar_id: String
+    let description: String?
+    let location: String?
 
-    init(payload: [String: AgentJSONValue]) {
-        self.payload = payload
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        self.payload = try container.decode([String: AgentJSONValue].self)
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.singleValueContainer()
-        try container.encode(payload)
+    private enum CodingKeys: String, CodingKey {
+        case summary
+        case start
+        case end
+        case calendar_id
+        case description
+        case location
     }
 }
 
 struct UpdateEventMetadata: Codable, Sendable {
-    let eventID: String
-    let calendarID: String
-    let changes: [String: AgentJSONValue]
+    let event_id: String
+    let calendar_id: String
+    let summary: String?
+    let start: DateTimeDict?
+    let end: DateTimeDict?
+    let description: String?
+    let location: String?
 
-    init(eventID: String, calendarID: String, changes: [String: AgentJSONValue]) {
-        self.eventID = eventID
-        self.calendarID = calendarID
-        self.changes = changes
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: DynamicCodingKey.self)
-
-        guard let eventKey = DynamicCodingKey(stringValue: "event-id"),
-              let calendarKey = DynamicCodingKey(stringValue: "calendar-id") else {
-            throw DecodingError.keyNotFound(DynamicCodingKey(stringValue: "event-id")!, .init(codingPath: decoder.codingPath, debugDescription: "Missing keys for update event metadata"))
-        }
-
-        self.eventID = try container.decode(String.self, forKey: eventKey)
-        self.calendarID = try container.decode(String.self, forKey: calendarKey)
-
-        var remaining: [String: AgentJSONValue] = [:]
-        for key in container.allKeys where key != eventKey && key != calendarKey {
-            remaining[key.stringValue] = try container.decode(AgentJSONValue.self, forKey: key)
-        }
-        self.changes = remaining
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: DynamicCodingKey.self)
-
-        if let eventKey = DynamicCodingKey(stringValue: "event-id") {
-            try container.encode(eventID, forKey: eventKey)
-        }
-
-        if let calendarKey = DynamicCodingKey(stringValue: "calendar-id") {
-            try container.encode(calendarID, forKey: calendarKey)
-        }
-
-        for (key, value) in changes {
-            if let codingKey = DynamicCodingKey(stringValue: key) {
-                try container.encode(value, forKey: codingKey)
-            }
-        }
+    private enum CodingKeys: String, CodingKey {
+        case event_id
+        case calendar_id
+        case summary
+        case start
+        case end
+        case description
+        case location
     }
 }
 
 struct DeleteEventMetadata: Codable, Sendable {
-    let eventID: String
-    let calendarID: String
+    let event_id: String
+    let calendar_id: String
 
     private enum CodingKeys: String, CodingKey {
-        case eventID = "event-id"
-        case calendarID = "calendar-id"
+        case event_id
+        case calendar_id
     }
 }
 
@@ -459,6 +489,10 @@ struct NoActionMetadata: Codable, Sendable {
 }
 
 // MARK: - Helpers
+
+struct DateTimeDict: Codable, Sendable {
+    let dateTime: Date  // Decoded from ISO8601 string with .iso8601 decoder strategy
+}
 
 struct DynamicCodingKey: CodingKey, Hashable {
     var stringValue: String

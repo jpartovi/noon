@@ -1,15 +1,33 @@
 """Agent endpoint for invoking the LangGraph calendar agent."""
 
 import logging
+import sys
+from pathlib import Path
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request
 from langgraph_sdk import get_client
 
+# Add parent directory to path to import from agent package
+_parent_dir = Path(__file__).parent.parent.parent.parent
+if str(_parent_dir) not in sys.path:
+    sys.path.insert(0, str(_parent_dir))
+
+# Import schemas - agent/__init__.py now uses lazy imports, so importing
+# agent.schemas.agent_response won't trigger main import
+from agent.schemas.agent_response import (
+    AgentResponse,
+    ErrorResponse,
+    ShowEventResponse,
+    ShowScheduleResponse,
+    CreateEventResponse,
+    UpdateEventResponse,
+    DeleteEventResponse,
+    NoActionResponse,
+)
+from pydantic import ValidationError
 from schemas.user import AuthenticatedUser
-from schemas.agent_response import AgentResponse, ErrorResponse
-from schemas.confirm_action import ConfirmActionRequest
 from core.dependencies import get_current_user
 from core.config import get_settings
 from domains.transcription.service import TranscriptionService
@@ -190,33 +208,55 @@ async def agent_action(
             f"type={result.get('type')} success={result.get('success')}"
         )
 
-        # Pass through agent response directly
-        # Ensure success is always a boolean for Swift decoder
-        result_success = bool(result.get("success", False))
-        
-        if "message" in result:
-            # Error response - ensure success is False
-            return {
-                "success": False,  # Always False for error responses
-                "message": result.get("message", "Unknown error"),
-            }
-        elif "type" in result:
-            # Success response - pass through as-is, ensure success is True
-            return {
-                "success": True,  # Always True for success responses
-                "type": result.get("type"),
-                "metadata": result.get("metadata", {}),
-            }
-        else:
-            # Fallback for unexpected responses - treat as error
-            logger.warning(
-                f"Unexpected result format user_id={current_user.id} "
-                f"keys={list(result.keys())}"
+        # Validate and parse agent response using Pydantic models
+        try:
+            if "message" in result:
+                # Error response
+                error_response = ErrorResponse.model_validate(result)
+                return error_response.model_dump()
+            elif "type" in result:
+                # Success response - parse based on type
+                response_type = result.get("type")
+                if response_type == "show-event":
+                    response = ShowEventResponse.model_validate(result)
+                elif response_type == "show-schedule":
+                    response = ShowScheduleResponse.model_validate(result)
+                elif response_type == "create-event":
+                    response = CreateEventResponse.model_validate(result)
+                elif response_type == "update-event":
+                    response = UpdateEventResponse.model_validate(result)
+                elif response_type == "delete-event":
+                    response = DeleteEventResponse.model_validate(result)
+                elif response_type == "no-action":
+                    response = NoActionResponse.model_validate(result)
+                else:
+                    logger.warning(
+                        f"Unknown response type user_id={current_user.id} type={response_type}"
+                    )
+                    error_response = ErrorResponse(
+                        message=f"Unknown response type from agent: {response_type}"
+                    )
+                    return error_response.model_dump()
+                return response.model_dump()
+            else:
+                # Fallback for unexpected responses - treat as error
+                logger.warning(
+                    f"Unexpected result format user_id={current_user.id} "
+                    f"keys={list(result.keys())}"
+                )
+                error_response = ErrorResponse(
+                    message=f"Unexpected response format from agent: {list(result.keys())}"
+                )
+                return error_response.model_dump()
+        except ValidationError as e:
+            logger.error(
+                f"Response validation failed user_id={current_user.id}: {e}",
+                exc_info=True,
             )
-            return {
-                "success": False,
-                "message": f"Unexpected response format from agent: {list(result.keys())}",
-            }
+            error_response = ErrorResponse(
+                message=f"Invalid response format from agent: {str(e)}"
+            )
+            return error_response.model_dump()
 
     except HTTPException:
         raise
@@ -228,36 +268,4 @@ async def agent_action(
         raise HTTPException(
             status_code=500,
             detail=f"Failed to invoke agent: {str(e)}"
-        )
-
-
-@router.post("/confirm-action", response_model=AgentResponse)
-async def confirm_action(
-    payload: ConfirmActionRequest,
-    current_user: AuthenticatedUser = Depends(get_current_user),
-):
-    """
-    Confirm and execute a calendar action based on the agent's request.
-    
-    Handles write operations that require confirmation:
-    - create-event: Create a new event
-    - update-event: Update an existing event
-    - delete-event: Delete an event
-    """
-    try:
-        result = await agent_calendar_service.confirm_calendar_action(
-            user_id=current_user.id,
-            payload=payload,
-        )
-        return result
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(
-            f"Failed to confirm action user_id={current_user.id}: {e}",
-            exc_info=True,
-        )
-        return ErrorResponse(
-            success="false",
-            message=f"Failed to confirm action: {str(e)}"
         )

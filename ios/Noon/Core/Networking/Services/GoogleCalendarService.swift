@@ -16,6 +16,12 @@ protocol GoogleCalendarScheduleServicing: Sendable {
         endDateISO: String,
         accessToken: String
     ) async throws -> GoogleCalendarSchedule
+    func fetchEventSurroundingSchedule(
+        eventID: String,
+        calendarID: String,
+        timezone: String,
+        accessToken: String
+    ) async throws -> GoogleCalendarSchedule
 }
 
 final class GoogleCalendarScheduleService: GoogleCalendarScheduleServicing {
@@ -85,6 +91,67 @@ final class GoogleCalendarScheduleService: GoogleCalendarScheduleServicing {
             throw GoogleCalendarScheduleServiceError.network(error)
         }
     }
+
+    func fetchEventSurroundingSchedule(
+        eventID: String,
+        calendarID: String,
+        timezone: String,
+        accessToken: String
+    ) async throws -> GoogleCalendarSchedule {
+        var request = try makeEventSurroundingScheduleRequest(accessToken: accessToken)
+        let payload = EventSurroundingScheduleRequestPayload(
+            eventID: eventID,
+            calendarID: calendarID,
+            timezone: timezone
+        )
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.withoutEscapingSlashes]
+        request.httpBody = try encoder.encode(payload)
+
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                googleCalendarLogger.error("❌ Non-HTTP response when fetching event surrounding schedule.")
+                throw GoogleCalendarScheduleServiceError.http(-1)
+            }
+
+            guard 200..<300 ~= httpResponse.statusCode else {
+                if httpResponse.statusCode == 401 {
+                    googleCalendarLogger.error("🚫 Unauthorized when fetching event surrounding schedule.")
+                    throw GoogleCalendarScheduleServiceError.unauthorized
+                }
+
+                if let payloadString = String(data: data, encoding: .utf8) {
+                    googleCalendarLogger.error("❌ HTTP \(httpResponse.statusCode) when fetching event surrounding schedule: \(payloadString, privacy: .private)")
+                } else {
+                    googleCalendarLogger.error("❌ HTTP \(httpResponse.statusCode) when fetching event surrounding schedule with empty body.")
+                }
+                throw GoogleCalendarScheduleServiceError.http(httpResponse.statusCode)
+            }
+
+            do {
+                let decoder = JSONDecoder()
+                decoder.dateDecodingStrategy = .iso8601
+                let response = try decoder.decode(EventSurroundingScheduleResponse.self, from: data)
+                googleCalendarLogger.debug("✅ Loaded event surrounding schedule with \(response.schedule.events.count, privacy: .public) events.")
+                return response.schedule
+            } catch {
+                if let dataString = String(data: data, encoding: .utf8) {
+                    googleCalendarLogger.error("❌ Decoding event surrounding schedule failed: \(String(describing: error)). Response: \(dataString, privacy: .private)")
+                } else {
+                    googleCalendarLogger.error("❌ Decoding event surrounding schedule failed: \(String(describing: error))")
+                }
+                throw GoogleCalendarScheduleServiceError.decoding(error)
+            }
+        } catch {
+            if let knownError = error as? GoogleCalendarScheduleServiceError {
+                throw knownError
+            }
+            googleCalendarLogger.error("❌ Network error when fetching event surrounding schedule: \(String(describing: error))")
+            throw GoogleCalendarScheduleServiceError.network(error)
+        }
+    }
 }
 
 private extension GoogleCalendarScheduleService {
@@ -96,6 +163,22 @@ private extension GoogleCalendarScheduleService {
             case startDate = "start_date"
             case endDate = "end_date"
         }
+    }
+
+    struct EventSurroundingScheduleRequestPayload: Encodable {
+        let eventID: String
+        let calendarID: String
+        let timezone: String
+
+        enum CodingKeys: String, CodingKey {
+            case eventID = "event_id"
+            case calendarID = "calendar_id"
+            case timezone
+        }
+    }
+
+    struct EventSurroundingScheduleResponse: Decodable {
+        let schedule: GoogleCalendarSchedule
     }
 
     func makeRequest(accessToken: String) throws -> URLRequest {
@@ -129,6 +212,19 @@ private extension GoogleCalendarScheduleService {
         ]
         return formatter
     }()
+
+    func makeEventSurroundingScheduleRequest(accessToken: String) throws -> URLRequest {
+        guard let url = URL(string: "/api/v1/calendars/event-surrounding-schedule", relativeTo: baseURL) else {
+            throw GoogleCalendarScheduleServiceError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        return request
+    }
 
     static func defaultBaseURL() -> URL {
         if let override = ProcessInfo.processInfo.environment["NOON_BACKEND_URL"],

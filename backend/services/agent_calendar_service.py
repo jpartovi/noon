@@ -7,13 +7,17 @@ from typing import Any, Dict, Optional
 
 from fastapi import HTTPException
 
-from schemas.agent_response import ErrorResponse
-from schemas.confirm_action import (
-    ConfirmActionRequest,
-    CreateEventRequest,
-    DeleteEventRequest,
-    UpdateEventRequest,
-)
+import sys
+from pathlib import Path
+
+# Add parent directory to path to import from agent package
+_parent_dir = Path(__file__).parent.parent.parent
+if str(_parent_dir) not in sys.path:
+    sys.path.insert(0, str(_parent_dir))
+
+# Import schemas - agent/__init__.py now uses lazy imports, so importing
+# agent.schemas.agent_response won't trigger main import
+from agent.schemas.agent_response import ErrorResponse
 from domains.calendars.repository import CalendarRepository
 from domains.calendars.providers.google import (
     GoogleCalendarAPIError,
@@ -185,113 +189,4 @@ async def search_events_for_user(
             "count": 0,
             "events": [],
         }
-
-
-async def confirm_calendar_action(
-    user_id: str,
-    payload: ConfirmActionRequest,
-) -> Dict[str, Any]:
-    """
-    Confirm and execute a calendar action based on the agent's request.
-    
-    Handles write operations that require confirmation:
-    - create-event: Create a new event
-    - update-event: Update an existing event
-    - delete-event: Delete an event
-    """
-    wrapper = get_calendar_wrapper_for_user(user_id)
-    
-    if isinstance(payload, CreateEventRequest):
-        # Create a new event
-        event_data = dict(payload.metadata)  # Make a copy to avoid mutating the original
-        
-        # Extract calendar_id from event_data or default to "primary"
-        calendar_id = event_data.pop("calendar_id", event_data.pop("calendar-id", "primary"))
-        
-        try:
-            created_event = await wrapper.create_event(
-                calendar_id=calendar_id,
-                event_data=event_data,
-            )
-            return {
-                "success": "true",
-                "type": "create-event",
-                "metadata": created_event,
-            }
-        except GoogleCalendarAPIError as e:
-            return ErrorResponse(
-                success="false",
-                message=f"Failed to create event: {str(e)}"
-            ).model_dump()
-    
-    elif isinstance(payload, UpdateEventRequest):
-        # Update an existing event
-        metadata = payload.metadata
-        event_id = metadata.event_id
-        calendar_id = metadata.calendar_id
-        
-        # Extract event data (everything except event-id and calendar-id)
-        event_data = {
-            k: v for k, v in metadata.model_dump(by_alias=True).items()
-            if k not in ("event-id", "calendar-id")
-        }
-        
-        try:
-            updated_event = await wrapper.update_event(
-                calendar_id=calendar_id,
-                event_id=event_id,
-                event_data=event_data,
-            )
-            return {
-                "success": "true",
-                "type": "update-event",
-                "metadata": {
-                    "event-id": event_id,
-                    "calendar-id": calendar_id,
-                    **updated_event,
-                }
-            }
-        except GoogleCalendarAPIError as e:
-            if e.status_code == 404:
-                return ErrorResponse(
-                    success="false",
-                    message=f"Event not found: {str(e)}"
-                ).model_dump()
-            return ErrorResponse(
-                success="false",
-                message=f"Failed to update event: {str(e)}"
-            ).model_dump()
-    
-    elif isinstance(payload, DeleteEventRequest):
-        # Delete an event
-        metadata = payload.metadata
-        try:
-            await wrapper.delete_event(
-                calendar_id=metadata.calendar_id,
-                event_id=metadata.event_id,
-            )
-            return {
-                "success": "true",
-                "type": "delete-event",
-                "metadata": {
-                    "event-id": metadata.event_id,
-                    "calendar-id": metadata.calendar_id,
-                }
-            }
-        except GoogleCalendarAPIError as e:
-            if e.status_code == 404:
-                return ErrorResponse(
-                    success="false",
-                    message=f"Event not found: {str(e)}"
-                ).model_dump()
-            return ErrorResponse(
-                success="false",
-                message=f"Failed to delete event: {str(e)}"
-            ).model_dump()
-    
-    else:
-        return ErrorResponse(
-            success="false",
-            message=f"Unknown request type: {type(payload)}"
-        ).model_dump()
 
