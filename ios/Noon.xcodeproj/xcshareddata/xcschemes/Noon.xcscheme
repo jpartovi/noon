@@ -53,7 +53,7 @@
       <EnvironmentVariables>
          <EnvironmentVariable
             key = "NOON_BACKEND_URL"
-            value = "http://127.0.0.1:8000"
+            value = "https://unesoteric-yi-doggedly.ngrok-free.dev"
             isEnabled = "YES">
          </EnvironmentVariable>
          <EnvironmentVariable
@@ -74,6 +74,11 @@
          <EnvironmentVariable
             key = "OS_ACTIVITY_MODE"
             value = "disable"
+            isEnabled = "YES">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "AGENT_BASE_URL"
+            value = "https://unesoteric-yi-doggedly.ngrok-free.dev"
             isEnabled = "YES">
          </EnvironmentVariable>
       </EnvironmentVariables>

@@ -32,6 +32,13 @@ struct CodeVerificationView: View {
                     .padding()
                     .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
                     .focused(focusedField, equals: .code)
+                    .onChange(of: viewModel.otpCode) { _, newValue in
+                        if newValue.count == 6, !viewModel.isLoading {
+                            Task {
+                                await viewModel.verifyOTP()
+                            }
+                        }
+                    }
             }
             .padding(.horizontal, 32)
 
