@@ -32,6 +32,7 @@ final class AgentViewModel: ObservableObject {
     private weak var authProvider: AuthSessionProviding?
     private let recorder: AgentAudioRecorder
     private let service: AgentActionServicing
+    private let transcriptionService: TranscriptionServicing
     private let scheduleService: GoogleCalendarScheduleServicing
     private let showScheduleHandler: ShowScheduleActionHandling
     private let calendar: Calendar = Calendar.autoupdatingCurrent
@@ -46,6 +47,7 @@ final class AgentViewModel: ObservableObject {
     init(
         recorder: AgentAudioRecorder? = nil,
         service: AgentActionServicing? = nil,
+        transcriptionService: TranscriptionServicing? = nil,
         scheduleService: GoogleCalendarScheduleServicing? = nil,
         showScheduleHandler: ShowScheduleActionHandling? = nil,
         initialScheduleDate: Date = Date(),
@@ -53,6 +55,7 @@ final class AgentViewModel: ObservableObject {
     ) {
         self.recorder = recorder ?? AgentAudioRecorder()
         self.service = service ?? AgentActionService()
+        self.transcriptionService = transcriptionService ?? TranscriptionService()
         self.scheduleService = scheduleService ?? GoogleCalendarScheduleService()
         self.showScheduleHandler = showScheduleHandler ?? ShowScheduleActionHandler()
         self.scheduleDate = calendar.startOfDay(for: initialScheduleDate)
@@ -98,10 +101,20 @@ final class AgentViewModel: ObservableObject {
 
                 displayState = .uploading
                 print("Recorded audio duration: \(recording.duration)s")
-                print("Uploading audio to /agent/action…")
-
-                let (result, tokenUsed) = try await sendRecording(
+                
+                // Step 1: Transcribe audio
+                print("Transcribing audio...")
+                let transcriptionResult = try await transcribeAudio(
                     recording: recording,
+                    accessToken: startingToken
+                )
+                let transcribedText = transcriptionResult.text
+                print("Transcribed text: \"\(transcribedText)\"")
+                
+                // Step 2: Send to agent
+                print("Sending to agent...")
+                let (result, tokenUsed) = try await sendToAgent(
+                    query: transcribedText,
                     accessToken: startingToken
                 )
 
@@ -129,9 +142,9 @@ final class AgentViewModel: ObservableObject {
         displayState = .failed(message: localizedMessage(for: error))
         isRecording = false
         if let serverError = error as? ServerError {
-            print("Transcription failed (\(serverError.statusCode)): \(serverError.message)")
+            print("Request failed (\(serverError.statusCode)): \(serverError.message)")
         } else {
-            print("Transcription failed: \(error.localizedDescription)")
+            print("Request failed: \(error.localizedDescription)")
         }
     }
 
@@ -204,7 +217,7 @@ final class AgentViewModel: ObservableObject {
                 return "Could not start microphone."
             }
         case let error as ServerError:
-            return "Transcription failed (\(error.statusCode)): \(error.message)"
+            return "Request failed (\(error.statusCode)): \(error.message)"
         case let error as GoogleCalendarScheduleServiceError:
             return error.localizedDescription
         case let error as AccessTokenError:
@@ -243,12 +256,35 @@ final class AgentViewModel: ObservableObject {
         return token
     }
 
-    private func sendRecording(
+    private func transcribeAudio(
         recording: AgentAudioRecorder.Recording,
         accessToken: String
+    ) async throws -> TranscriptionResult {
+        let request = TranscriptionRequest(fileURL: recording.fileURL)
+        
+        do {
+            return try await transcriptionService.transcribe(
+                request: request,
+                accessToken: accessToken
+            )
+        } catch let error as ServerError where error.statusCode == 401 {
+            // Token expired - refresh and retry once
+            print("Got 401 during transcription, refreshing token and retrying...")
+            guard let refreshedToken = await AuthTokenProvider.shared.currentAccessToken() else {
+                throw AccessTokenError.missingAuthProvider
+            }
+            return try await transcriptionService.transcribe(
+                request: request,
+                accessToken: refreshedToken
+            )
+        }
+    }
+    
+    private func sendToAgent(
+        query: String,
+        accessToken: String
     ) async throws -> (AgentActionResult, String) {
-        // Try the request first
-        let request = AgentActionRequest(fileURL: recording.fileURL)
+        let request = AgentActionRequest(query: query)
         
         do {
             let result = try await service.performAgentAction(
@@ -258,7 +294,7 @@ final class AgentViewModel: ObservableObject {
             return (result, accessToken)
         } catch let error as ServerError where error.statusCode == 401 {
             // Token expired - refresh and retry once
-            print("Got 401, refreshing token and retrying...")
+            print("Got 401 during agent request, refreshing token and retrying...")
             guard let refreshedToken = await AuthTokenProvider.shared.currentAccessToken() else {
                 throw AccessTokenError.missingAuthProvider
             }

@@ -8,6 +8,14 @@
 import Foundation
 
 struct AgentActionRequest {
+    let query: String
+    
+    init(query: String) {
+        self.query = query
+    }
+}
+
+struct TranscriptionRequest {
     let fileURL: URL
     
     init(fileURL: URL) {
@@ -18,6 +26,15 @@ struct AgentActionRequest {
         let name = fileURL.lastPathComponent
         return name.isEmpty ? "recording.wav" : name
     }
+}
+
+struct TranscriptionResponse: Codable {
+    let text: String
+}
+
+struct TranscriptionResult {
+    let statusCode: Int
+    let text: String
 }
 
 struct AgentActionResult {

@@ -6,7 +6,8 @@ from pathlib import Path
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from urllib.parse import urlparse
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request, Body
+from pydantic import BaseModel
 from langgraph_sdk import get_client
 
 # Add parent directory to path to import from agent package
@@ -42,34 +43,22 @@ router = APIRouter(prefix="/agent", tags=["agent"])
 transcription_service = TranscriptionService()
 
 
-@router.post("/action")
-async def agent_action(
-    request: Request,
-    file: UploadFile = File(..., description="Audio file to transcribe and process"),
+class AgentActionRequest(BaseModel):
+    """Request model for agent action endpoint."""
+    query: str
+
+
+@router.post("/transcribe")
+async def transcribe_audio(
+    file: UploadFile = File(..., description="Audio file to transcribe"),
     current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     """
-    Invoke the LangGraph calendar agent with an audio file.
-
-    The audio file is first transcribed using Deepgram, then the transcribed text
-    is passed to the agent which will classify intent and extract metadata for calendar operations.
+    Transcribe an audio file to text using Deepgram.
+    
+    Returns the transcribed text as JSON.
     """
     try:
-        # Extract Supabase access token from Authorization header
-        auth_header = request.headers.get("Authorization")
-        if not auth_header or not auth_header.startswith("Bearer "):
-            raise HTTPException(
-                status_code=401,
-                detail="Missing or invalid authentication token",
-            )
-        supabase_access_token = auth_header.replace("Bearer ", "", 1)
-
-        # Prepare auth data with Supabase token
-        auth = {
-            "user_id": current_user.id,
-            "supabase_access_token": supabase_access_token,
-        }
-
         # Validate file
         if not file or not file.filename:
             raise HTTPException(status_code=400, detail="No file provided")
@@ -98,6 +87,57 @@ async def agent_action(
             raise HTTPException(
                 status_code=400,
                 detail="Transcription resulted in empty text. Please ensure the audio file contains speech.",
+            )
+
+        return {"text": transcribed_text}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Transcription endpoint failed user_id={current_user.id}: {e}",
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to transcribe audio: {str(e)}"
+        )
+
+
+@router.post("/action")
+async def agent_action(
+    request: Request,
+    body: AgentActionRequest = Body(..., description="Text query to process"),
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    """
+    Invoke the LangGraph calendar agent with a text query.
+
+    The text query is passed to the agent which will classify intent and extract
+    metadata for calendar operations.
+    """
+    try:
+        # Extract Supabase access token from Authorization header
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            raise HTTPException(
+                status_code=401,
+                detail="Missing or invalid authentication token",
+            )
+        supabase_access_token = auth_header.replace("Bearer ", "", 1)
+
+        # Prepare auth data with Supabase token
+        auth = {
+            "user_id": current_user.id,
+            "supabase_access_token": supabase_access_token,
+        }
+
+        # Validate query text
+        query_text = body.query
+        if not query_text or not query_text.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="Query text is required and cannot be empty.",
             )
 
         # Create LangGraph SDK client and invoke agent
@@ -180,7 +220,7 @@ async def agent_action(
             )
 
         input_state = {
-            "query": transcribed_text,
+            "query": query_text,
             "auth": auth,
             "success": False,
             "type": None,
@@ -193,7 +233,7 @@ async def agent_action(
         }
 
         logger.info(
-            f"Invoking agent user_id={current_user.id} query_length={len(transcribed_text)}"
+            f"Invoking agent user_id={current_user.id} query_length={len(query_text)}"
         )
 
         # Invoke and wait for completion

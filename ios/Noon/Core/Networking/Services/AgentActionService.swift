@@ -27,12 +27,11 @@ struct AgentActionService: AgentActionServicing {
         var urlRequest = URLRequest(url: endpoint)
         urlRequest.httpMethod = "POST"
         urlRequest.addValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        let boundary = UUID().uuidString
-        urlRequest.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-
-        let bodyData = try buildMultipartBody(request: request, boundary: boundary)
-        urlRequest.httpBody = bodyData
+        let requestBody = ["query": request.query]
+        let encoder = JSONEncoder()
+        urlRequest.httpBody = try encoder.encode(requestBody)
 
         let (data, response) = try await NetworkSession.shared.data(for: urlRequest)
 
@@ -54,30 +53,6 @@ struct AgentActionService: AgentActionServicing {
             return AgentActionResult(statusCode: statusCode, data: data, agentResponse: agentResponse)
         } catch {
             throw ServiceError.decodingFailed(underlying: error)
-        }
-    }
-}
-
-private extension AgentActionService {
-    func buildMultipartBody(request: AgentActionRequest, boundary: String) throws -> Data {
-        var body = Data()
-        let fileData = try Data(contentsOf: request.fileURL)
-
-        body.append("--\(boundary)\r\n")
-        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(request.filename)\"\r\n")
-        body.append("Content-Type: audio/wav\r\n\r\n")
-        body.append(fileData)
-        body.append("\r\n")
-        body.append("--\(boundary)--\r\n")
-
-        return body
-    }
-}
-
-private extension Data {
-    mutating func append(_ string: String) {
-        if let data = string.data(using: .utf8) {
-            append(data)
         }
     }
 }
