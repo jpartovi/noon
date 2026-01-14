@@ -62,54 +62,6 @@ class CalendarService:
         """Initialize calendar service with repository."""
         self.repository = repository or CalendarRepository()
 
-    async def events_for_event_window(
-        self,
-        *,
-        user_id: str,
-        event_id: str,
-        calendar_id: str,
-        timezone_name: str,
-    ) -> Dict[str, Any]:
-        """Get event and surrounding schedule."""
-        contexts, calendars_by_id = await self._prepare_context(user_id)
-
-        event_payload, event_context = await self._locate_event(
-            contexts,
-            calendar_id=calendar_id,
-            event_id=event_id,
-        )
-        if event_payload is None or event_context is None:
-            raise GoogleCalendarEventNotFoundError(
-                "Event not found in any linked Google calendar."
-            )
-
-        window = _calculate_window(event_payload, timezone_name)
-
-        events = await self._events_for_window(
-            contexts,
-            calendars_by_id,
-            timezone_name,
-            window,
-        )
-
-        primary_calendar = calendars_by_id.get(calendar_id)
-        event_wrapper = {
-            "data": event_payload,
-            "calendar_id": calendar_id,
-            "calendar_name": _resolve_calendar_name(event_payload, primary_calendar),
-            "account_id": event_context.id,
-            "account_email": event_context.email,
-        }
-
-        response = {
-            "event": event_wrapper,
-            "schedule": {
-                "window": _window_to_response(window),
-                "events": events,
-            },
-        }
-        return response
-
     async def events_for_date_range(
         self,
         *,
@@ -553,39 +505,6 @@ class CalendarService:
 
 
 # Helper functions
-def _calculate_window(
-    event_payload: Dict[str, Any], timezone_name: str
-) -> Dict[str, Any]:
-    """Calculate window from event."""
-    tz = ZoneInfo(timezone_name)
-    start_info = event_payload.get("start") or {}
-    end_info = event_payload.get("end") or {}
-    start_dt, start_all_day = _localize_event_time(start_info, tz)
-    end_dt, end_all_day = _localize_event_time(end_info, tz)
-
-    if end_all_day:
-        end_dt = end_dt - timedelta(microseconds=1)
-
-    start_date = start_dt.date()
-    end_date = end_dt.date()
-
-    window_start_local = datetime.combine(start_date, time.min, tz)
-    window_end_local = datetime.combine(end_date + timedelta(days=1), time.min, tz)
-    time_min_utc = window_start_local.astimezone(timezone.utc).isoformat()
-    time_max_utc = window_end_local.astimezone(timezone.utc).isoformat()
-
-    return {
-        "start_local": window_start_local,
-        "end_local": window_end_local,
-        "start_date": start_date,
-        "end_date": end_date,
-        "time_min_utc": time_min_utc,
-        "time_max_utc": time_max_utc,
-        "end_inclusive": window_end_local - timedelta(microseconds=1),
-        "timezone": timezone_name,
-    }
-
-
 def _window_from_dates(
     start_date: date, end_date: date, timezone_name: str
 ) -> Dict[str, Any]:

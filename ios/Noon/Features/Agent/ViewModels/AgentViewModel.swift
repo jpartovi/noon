@@ -163,6 +163,17 @@ final class AgentViewModel: ObservableObject {
         loadSchedule(for: today, force: force)
     }
 
+    /// Load schedule for a given date using the unified `/api/v1/calendars/schedule` endpoint.
+    /// 
+    /// This method is used by all agent-driven schedule displays:
+    /// - show-schedule: Uses the date from agent metadata
+    /// - show-event: Fetches event to get start date, then loads schedule
+    /// - update-event: Uses metadata start date or fetches event, then loads schedule
+    /// - delete-event: Fetches event to get start date, then loads schedule
+    /// - create-event: Uses metadata start date, then loads schedule
+    ///
+    /// All flows use the same n-day window logic via `dateRange(for:)` and fetch events
+    /// from the unified schedule endpoint.
     private func loadSchedule(
         for date: Date,
         force: Bool,
@@ -350,20 +361,17 @@ final class AgentViewModel: ObservableObject {
     private func handleShowEvent(response: ShowEventResponse, accessToken: String) async throws {
         let eventID = response.metadata.event_id
         let calendarID = response.metadata.calendar_id
-        let timezone = TimeZone.autoupdatingCurrent.identifier
         
-        let schedule = try await scheduleService.fetchEventSurroundingSchedule(
-            eventID: eventID,
-            calendarID: calendarID,
-            timezone: timezone,
-            accessToken: accessToken
+        // Fetch the event to get its start date
+        let event = try await calendarService.fetchEvent(
+            accessToken: accessToken,
+            calendarId: calendarID,
+            eventId: eventID
         )
         
-        // Find the event in the schedule to get its start date
-        guard let targetEvent = schedule.events.first(where: { $0.id == eventID }),
-              let eventStartDate = targetEvent.start?.dateTime else {
-            print("ERROR: Could not find event \(eventID) in schedule or event has no start date")
-            throw NSError(domain: "AgentViewModel", code: 1, userInfo: [NSLocalizedDescriptionKey: "Event not found in schedule"])
+        guard let eventStartDate = event.start?.dateTime else {
+            print("ERROR: Event \(eventID) has no start date")
+            throw NSError(domain: "AgentViewModel", code: 1, userInfo: [NSLocalizedDescriptionKey: "Event has no start date"])
         }
         
         // Use the day of the event's start date
@@ -371,38 +379,30 @@ final class AgentViewModel: ObservableObject {
         let dateString = Self.iso8601DateFormatter.string(from: eventDay)
         print("Show event called for event: \(eventID), day: \(dateString)")
         
-        // Use the events from the surrounding schedule directly
-        let displayEvents = schedule.events.map { DisplayEvent(event: $0) }
-        let focus = ScheduleFocusEvent(eventID: eventID, style: .highlight)
-        
-        // Update the schedule state directly
-        let dateRange = self.dateRange(for: eventDay)
-        scheduleDate = dateRange.start
-        self.displayEvents = displayEvents
-        self.focusEvent = focus
-        hasLoadedSchedule = true
-        
-        print("Show event: Set schedule with \(displayEvents.count) events, scheduleDate: \(Self.iso8601DateFormatter.string(from: scheduleDate)), hasLoadedSchedule: \(hasLoadedSchedule)")
+        // Load schedule for the event's day with highlight focus
+        loadSchedule(
+            for: eventDay,
+            force: true,
+            accessToken: accessToken,
+            focusEvent: ScheduleFocusEvent(eventID: eventID, style: .highlight)
+        )
     }
 
     // MARK: - Delete Event Handling
     private func handleDeleteEvent(response: DeleteEventResponse, accessToken: String) async throws {
         let eventID = response.metadata.event_id
         let calendarID = response.metadata.calendar_id
-        let timezone = TimeZone.autoupdatingCurrent.identifier
         
-        let schedule = try await scheduleService.fetchEventSurroundingSchedule(
-            eventID: eventID,
-            calendarID: calendarID,
-            timezone: timezone,
-            accessToken: accessToken
+        // Fetch the event to get its start date
+        let event = try await calendarService.fetchEvent(
+            accessToken: accessToken,
+            calendarId: calendarID,
+            eventId: eventID
         )
         
-        // Find the event in the schedule to get its start date
-        guard let targetEvent = schedule.events.first(where: { $0.id == eventID }),
-              let eventStartDate = targetEvent.start?.dateTime else {
-            print("ERROR: Could not find event \(eventID) in schedule or event has no start date")
-            throw NSError(domain: "AgentViewModel", code: 1, userInfo: [NSLocalizedDescriptionKey: "Event not found in schedule"])
+        guard let eventStartDate = event.start?.dateTime else {
+            print("ERROR: Event \(eventID) has no start date")
+            throw NSError(domain: "AgentViewModel", code: 1, userInfo: [NSLocalizedDescriptionKey: "Event has no start date"])
         }
         
         // Use the day of the event's start date
@@ -410,40 +410,39 @@ final class AgentViewModel: ObservableObject {
         let dateString = Self.iso8601DateFormatter.string(from: eventDay)
         print("Delete event called for event: \(eventID), day: \(dateString)")
         
-        // Use the events from the surrounding schedule directly
-        let displayEvents = schedule.events.map { DisplayEvent(event: $0) }
-        
         // Store the pending delete event response for confirmation
         self.pendingAction = .deleteEvent(response)
         
-        // Update the schedule state with destructive style applied to the event
-        let dateRange = self.dateRange(for: eventDay)
-        scheduleDate = dateRange.start
-        self.displayEvents = displayEvents
-        self.focusEvent = ScheduleFocusEvent(eventID: eventID, style: .destructive)
-        hasLoadedSchedule = true
-        
-        print("Delete event: Set schedule with \(displayEvents.count) events, scheduleDate: \(Self.iso8601DateFormatter.string(from: scheduleDate)), hasLoadedSchedule: \(hasLoadedSchedule)")
+        // Load schedule for the event's day with destructive focus
+        loadSchedule(
+            for: eventDay,
+            force: true,
+            accessToken: accessToken,
+            focusEvent: ScheduleFocusEvent(eventID: eventID, style: .destructive)
+        )
     }
 
     // MARK: - Update Event Handling
     private func handleUpdateEvent(response: UpdateEventResponse, accessToken: String) async throws {
         let eventID = response.metadata.event_id
         let calendarID = response.metadata.calendar_id
-        let timezone = TimeZone.autoupdatingCurrent.identifier
         
-        let schedule = try await scheduleService.fetchEventSurroundingSchedule(
-            eventID: eventID,
-            calendarID: calendarID,
-            timezone: timezone,
-            accessToken: accessToken
-        )
-        
-        // Find the event in the schedule to get its start date
-        guard let targetEvent = schedule.events.first(where: { $0.id == eventID }),
-              let eventStartDate = targetEvent.start?.dateTime else {
-            print("ERROR: Could not find event \(eventID) in schedule or event has no start date")
-            throw NSError(domain: "AgentViewModel", code: 1, userInfo: [NSLocalizedDescriptionKey: "Event not found in schedule"])
+        // Try to get start date from metadata first, otherwise fetch the event
+        let eventStartDate: Date
+        if let metadataStart = response.metadata.start?.dateTime {
+            eventStartDate = metadataStart
+        } else {
+            // Fetch the event to get its start date
+            let event = try await calendarService.fetchEvent(
+                accessToken: accessToken,
+                calendarId: calendarID,
+                eventId: eventID
+            )
+            guard let startDate = event.start?.dateTime else {
+                print("ERROR: Event \(eventID) has no start date")
+                throw NSError(domain: "AgentViewModel", code: 1, userInfo: [NSLocalizedDescriptionKey: "Event has no start date"])
+            }
+            eventStartDate = startDate
         }
         
         // Use the day of the event's start date
@@ -451,18 +450,13 @@ final class AgentViewModel: ObservableObject {
         let dateString = Self.iso8601DateFormatter.string(from: eventDay)
         print("Update event called for event: \(eventID), day: \(dateString)")
         
-        // Use the events from the surrounding schedule directly
-        let displayEvents = schedule.events.map { DisplayEvent(event: $0) }
-        let focus = ScheduleFocusEvent(eventID: eventID, style: .update)
-        
-        // Update the schedule state directly
-        let dateRange = self.dateRange(for: eventDay)
-        scheduleDate = dateRange.start
-        self.displayEvents = displayEvents
-        self.focusEvent = focus
-        hasLoadedSchedule = true
-        
-        print("Update event: Set schedule with \(displayEvents.count) events, scheduleDate: \(Self.iso8601DateFormatter.string(from: scheduleDate)), hasLoadedSchedule: \(hasLoadedSchedule)")
+        // Load schedule for the event's day with update focus
+        loadSchedule(
+            for: eventDay,
+            force: true,
+            accessToken: accessToken,
+            focusEvent: ScheduleFocusEvent(eventID: eventID, style: .update)
+        )
     }
 
     // MARK: - Create Event Handling

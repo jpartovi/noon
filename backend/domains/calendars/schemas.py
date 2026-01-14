@@ -47,12 +47,6 @@ class GoogleOAuthStartResponse(BaseModel):
 
 
 # Calendar event schemas
-class EventSurroundingScheduleRequest(BaseModel):
-    event_id: str = Field(..., min_length=1)
-    calendar_id: str = Field(..., min_length=1)
-    timezone: str = Field(default="UTC", min_length=1)
-
-
 class ScheduleRequest(BaseModel):
     start_date: date
     end_date: date
@@ -86,22 +80,9 @@ class CalendarEvent(BaseModel):
     raw: Dict[str, Any] = Field(default_factory=dict)
 
 
-class EventDetail(BaseModel):
-    data: Dict[str, Any] = Field(default_factory=dict)
-    calendar_id: Optional[str] = None
-    calendar_name: Optional[str] = None
-    account_id: Optional[str] = None
-    account_email: Optional[str] = None
-
-
 class ScheduleResponse(BaseModel):
     window: EventWindowInfo
     events: List[CalendarEvent]
-
-
-class EventSurroundingScheduleResponse(BaseModel):
-    event: EventDetail
-    schedule: ScheduleResponse
 
 
 class CreateEventRequest(BaseModel):

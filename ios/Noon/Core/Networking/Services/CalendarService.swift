@@ -16,6 +16,7 @@ protocol CalendarServicing {
     func deleteCalendar(accessToken: String, accountId: String) async throws
     func createEvent(accessToken: String, request: CreateEventRequest) async throws -> CalendarCreateEventResponse
     func deleteEvent(accessToken: String, calendarId: String, eventId: String) async throws
+    func fetchEvent(accessToken: String, calendarId: String, eventId: String) async throws -> CalendarEvent
 }
 
 final class CalendarService: CalendarServicing {
@@ -218,6 +219,53 @@ final class CalendarService: CalendarServicing {
                 throw calendarError
             }
             calendarLogger.error("❌ Network error when deleting event \(eventId, privacy: .private): \(String(describing: error))")
+            throw CalendarServiceError.network(error)
+        }
+    }
+
+    func fetchEvent(accessToken: String, calendarId: String, eventId: String) async throws -> CalendarEvent {
+        let request = try makeRequest(path: "/api/v1/agent/calendars/\(calendarId)/events/\(eventId)", accessToken: accessToken, method: "GET")
+        
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                calendarLogger.error("❌ Non-HTTP response when fetching event")
+                throw CalendarServiceError.http(-1)
+            }
+
+            guard 200..<300 ~= httpResponse.statusCode else {
+                if httpResponse.statusCode == 401 {
+                    calendarLogger.error("🚫 Unauthorized when fetching event")
+                    throw CalendarServiceError.unauthorized
+                }
+                if httpResponse.statusCode == 404 {
+                    calendarLogger.error("❌ Event not found: \(eventId, privacy: .private)")
+                    throw CalendarServiceError.http(404)
+                }
+                if let payload = String(data: data, encoding: .utf8) {
+                    calendarLogger.error("❌ HTTP \(httpResponse.statusCode) when fetching event: \(payload, privacy: .private)")
+                } else {
+                    calendarLogger.error("❌ HTTP \(httpResponse.statusCode) when fetching event with empty body")
+                }
+                throw CalendarServiceError.http(httpResponse.statusCode)
+            }
+
+            do {
+                let decoder = JSONDecoder()
+                decoder.keyDecodingStrategy = .convertFromSnakeCase
+                decoder.dateDecodingStrategy = .iso8601
+                let event = try decoder.decode(CalendarEvent.self, from: data)
+                calendarLogger.debug("✅ Fetched event: \(eventId, privacy: .public)")
+                return event
+            } catch {
+                calendarLogger.error("❌ Decoding error when fetching event: \(String(describing: error))")
+                throw CalendarServiceError.decoding(error)
+            }
+        } catch {
+            if let calendarError = error as? CalendarServiceError {
+                throw calendarError
+            }
+            calendarLogger.error("❌ Network error when fetching event \(eventId, privacy: .private): \(String(describing: error))")
             throw CalendarServiceError.network(error)
         }
     }

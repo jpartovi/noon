@@ -299,6 +299,31 @@ private final class MockCalendarService: CalendarServicing {
         // Mock implementation - just return success
         print("Mock deleted event: \(eventId)")
     }
+
+    func fetchEvent(accessToken: String, calendarId: String, eventId: String) async throws -> CalendarEvent {
+        // Mock implementation - return a mock event
+        let now = Date()
+        return CalendarEvent(
+            id: eventId,
+            title: "Mock Event",
+            description: "This is a mock event for testing",
+            start: CalendarEvent.EventDateTime(
+                dateTime: now,
+                date: nil,
+                timeZone: TimeZone.autoupdatingCurrent.identifier
+            ),
+            end: CalendarEvent.EventDateTime(
+                dateTime: now.addingTimeInterval(3600),
+                date: nil,
+                timeZone: TimeZone.autoupdatingCurrent.identifier
+            ),
+            attendees: [],
+            createdBy: nil,
+            calendarId: calendarId,
+            location: nil,
+            conference: nil
+        )
+    }
 }
 
 private final class MockSessionProvider: AuthSessionProviding {
