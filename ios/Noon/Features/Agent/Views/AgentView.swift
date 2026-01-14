@@ -43,12 +43,12 @@ struct AgentView: View {
                         .padding(.horizontal, 24)
                 }
                 
-                // Modal appears above microphone button when there's a pending action
+                // Modal appears above microphone button when there's an agent action requiring confirmation
                 // This increases the safeAreaInset height, shrinking the schedule view above
-                if let pendingAction = viewModel.pendingAction {
+                if let agentAction = viewModel.agentAction, agentAction.requiresConfirmation {
                     VStack {
                         ConfirmationModal(
-                            actionType: actionType(for: pendingAction),
+                            actionType: actionType(for: agentAction),
                             onConfirm: {
                                 Task {
                                     await viewModel.confirmPendingAction(accessToken: authViewModel.session?.accessToken)
@@ -67,7 +67,7 @@ struct AgentView: View {
                     }
                 }
             }
-            .animation(.spring(response: 0.3, dampingFraction: 0.8), value: viewModel.pendingAction != nil)
+            .animation(.spring(response: 0.3, dampingFraction: 0.8), value: viewModel.agentAction?.requiresConfirmation == true)
         }
         .onReceive(viewModel.$displayState) { state in
             handleDisplayStateChange(state)
@@ -127,14 +127,17 @@ struct AgentView: View {
         .padding(.bottom, 20)
     }
 
-    private func actionType(for pendingAction: AgentViewModel.PendingAction) -> ConfirmationActionType {
-        switch pendingAction {
+    private func actionType(for agentAction: AgentViewModel.AgentAction) -> ConfirmationActionType {
+        switch agentAction {
         case .createEvent:
             return .createEvent
         case .deleteEvent:
             return .deleteEvent
         case .updateEvent:
             return .updateEvent
+        case .showEvent, .showSchedule:
+            // These shouldn't reach here since requiresConfirmation is false
+            return .createEvent
         }
     }
 

@@ -321,6 +321,8 @@ struct NDayScheduleView: View {
 
     private func eventsForDay(_ events: [DisplayEvent], day: Date) -> [DisplayEvent] {
         return events.filter { event in
+            // Filter out hidden events
+            guard !event.isHidden else { return false }
             guard let startDate = event.event.start?.dateTime else { return false }
             return calendar.isDate(startDate, inSameDayAs: day)
         }

@@ -284,12 +284,24 @@ struct DisplayEvent: Identifiable, Hashable, Sendable {
     
     let event: CalendarEvent
     let style: Style?
+    var isHidden: Bool
     
     var id: String { event.id }
     
-    init(event: CalendarEvent, style: Style? = nil) {
+    init(event: CalendarEvent, style: Style? = nil, isHidden: Bool = false) {
         self.event = event
         self.style = style
+        self.isHidden = isHidden
+    }
+    
+    // Custom Hashable conformance - isHidden doesn't affect equality/hashing
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(event)
+        hasher.combine(style)
+    }
+    
+    static func == (lhs: DisplayEvent, rhs: DisplayEvent) -> Bool {
+        lhs.event == rhs.event && lhs.style == rhs.style
     }
 }
 

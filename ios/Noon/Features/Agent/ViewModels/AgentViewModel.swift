@@ -25,13 +25,43 @@ final class AgentViewModel: ObservableObject {
     @Published private(set) var isLoadingSchedule: Bool = false
     @Published private(set) var hasLoadedSchedule: Bool = false
     @Published private(set) var focusEvent: ScheduleFocusEvent?
-    @Published var pendingAction: PendingAction?
+    @Published var agentAction: AgentAction?
     @Published var isConfirmingAction: Bool = false
     
-    enum PendingAction {
+    enum AgentAction {
+        case showEvent(ShowEventResponse)
+        case showSchedule(ShowScheduleResponse)
         case createEvent(CreateEventResponse)
-        case deleteEvent(DeleteEventResponse)
         case updateEvent(UpdateEventResponse)
+        case deleteEvent(DeleteEventResponse)
+        
+        /// Whether this action requires user confirmation via modal
+        var requiresConfirmation: Bool {
+            switch self {
+            case .showEvent, .showSchedule:
+                return false
+            case .createEvent, .updateEvent, .deleteEvent:
+                return true
+            }
+        }
+        
+        /// The focus event for schedule UI styling, if applicable
+        var focusEvent: ScheduleFocusEvent? {
+            switch self {
+            case .showEvent(let response):
+                return ScheduleFocusEvent(eventID: response.metadata.event_id, style: .highlight)
+            case .showSchedule:
+                return nil
+            case .createEvent:
+                // For create, we use a temporary event ID that's generated in handleCreateEvent
+                // This will be set separately when the action is created
+                return nil
+            case .updateEvent(let response):
+                return ScheduleFocusEvent(eventID: response.metadata.event_id, style: .update)
+            case .deleteEvent(let response):
+                return ScheduleFocusEvent(eventID: response.metadata.event_id, style: .destructive)
+            }
+        }
     }
 
     // Configuration for n-day schedule
@@ -340,13 +370,41 @@ final class AgentViewModel: ObservableObject {
         }
     }
 
+    private func fetchEventWithRefresh(
+        accessToken: String,
+        calendarId: String,
+        eventId: String
+    ) async throws -> CalendarEvent {
+        do {
+            return try await calendarService.fetchEvent(
+                accessToken: accessToken,
+                calendarId: calendarId,
+                eventId: eventId
+            )
+        } catch CalendarServiceError.unauthorized {
+            guard let refreshedToken = await AuthTokenProvider.shared.currentAccessToken() else {
+                throw AccessTokenError.missingAuthProvider
+            }
+            return try await calendarService.fetchEvent(
+                accessToken: refreshedToken,
+                calendarId: calendarId,
+                eventId: eventId
+            )
+        }
+    }
+
     // MARK: - Show Event Handling
     private func handleShowEvent(response: ShowEventResponse, accessToken: String) async throws {
         let eventID = response.metadata.event_id
         let calendarID = response.metadata.calendar_id
         
+        // Set the unified agent action state
+        self.agentAction = .showEvent(response)
+        // Set focus event immediately from agentAction
+        self.focusEvent = agentAction?.focusEvent
+        
         // Fetch the event to get its start date
-        let event = try await calendarService.fetchEvent(
+        let event = try await fetchEventWithRefresh(
             accessToken: accessToken,
             calendarId: calendarID,
             eventId: eventID
@@ -360,12 +418,12 @@ final class AgentViewModel: ObservableObject {
         // Use the day of the event's start date
         let eventDay = calendar.startOfDay(for: eventStartDate)
 
-        // Load schedule for the event's day with highlight focus
+        // Load schedule for the event's day with focus from agentAction
         loadSchedule(
             for: eventDay,
             force: true,
             accessToken: accessToken,
-            focusEvent: ScheduleFocusEvent(eventID: eventID, style: .highlight)
+            focusEvent: agentAction?.focusEvent
         )
     }
 
@@ -374,8 +432,13 @@ final class AgentViewModel: ObservableObject {
         let eventID = response.metadata.event_id
         let calendarID = response.metadata.calendar_id
         
+        // Set the unified agent action state
+        self.agentAction = .deleteEvent(response)
+        // Set focus event immediately from agentAction
+        self.focusEvent = agentAction?.focusEvent
+        
         // Fetch the event to get its start date
-        let event = try await calendarService.fetchEvent(
+        let event = try await fetchEventWithRefresh(
             accessToken: accessToken,
             calendarId: calendarID,
             eventId: eventID
@@ -388,55 +451,121 @@ final class AgentViewModel: ObservableObject {
         
         // Use the day of the event's start date
         let eventDay = calendar.startOfDay(for: eventStartDate)
-
-        // Store the pending delete event response for confirmation
-        self.pendingAction = .deleteEvent(response)
         
-        // Load schedule for the event's day with destructive focus
+        // Load schedule for the event's day with focus from agentAction
         loadSchedule(
             for: eventDay,
             force: true,
             accessToken: accessToken,
-            focusEvent: ScheduleFocusEvent(eventID: eventID, style: .destructive)
+            focusEvent: agentAction?.focusEvent
         )
     }
 
     // MARK: - Update Event Handling
     private func handleUpdateEvent(response: UpdateEventResponse, accessToken: String) async throws {
-        let eventID = response.metadata.event_id
-        let calendarID = response.metadata.calendar_id
+        let metadata = response.metadata
+        let eventID = metadata.event_id
+        let calendarID = metadata.calendar_id
         
-        // Try to get start date from metadata first, otherwise fetch the event
-        let eventStartDate: Date
-        if let metadataStart = response.metadata.start?.dateTime {
-            eventStartDate = metadataStart
-        } else {
-            // Fetch the event to get its start date
-            let event = try await calendarService.fetchEvent(
-                accessToken: accessToken,
-                calendarId: calendarID,
-                eventId: eventID
+        // Set the unified agent action state
+        self.agentAction = .updateEvent(response)
+        
+        // Fetch the original event to get its current data
+        let originalEvent = try await fetchEventWithRefresh(
+            accessToken: accessToken,
+            calendarId: calendarID,
+            eventId: eventID
+        )
+        
+        // Create a merged CalendarEvent by applying update metadata to original event
+        let timezone = TimeZone.autoupdatingCurrent.identifier
+        
+        // Determine updated start date/time
+        let updatedStart: CalendarEvent.EventDateTime?
+        if let metadataStart = metadata.start?.dateTime {
+            updatedStart = CalendarEvent.EventDateTime(
+                dateTime: metadataStart,
+                date: nil,
+                timeZone: timezone
             )
-            guard let startDate = event.start?.dateTime else {
-                print("ERROR: Event \(eventID) has no start date")
-                throw NSError(domain: "AgentViewModel", code: 1, userInfo: [NSLocalizedDescriptionKey: "Event has no start date"])
-            }
-            eventStartDate = startDate
+        } else {
+            updatedStart = originalEvent.start
         }
         
-        // Use the day of the event's start date
-        let eventDay = calendar.startOfDay(for: eventStartDate)
-
-        // Load schedule for the event's day with update focus
-        loadSchedule(
-            for: eventDay,
-            force: true,
-            accessToken: accessToken,
-            focusEvent: ScheduleFocusEvent(eventID: eventID, style: .update)
+        // Determine updated end date/time
+        let updatedEnd: CalendarEvent.EventDateTime?
+        if let metadataEnd = metadata.end?.dateTime {
+            updatedEnd = CalendarEvent.EventDateTime(
+                dateTime: metadataEnd,
+                date: nil,
+                timeZone: timezone
+            )
+        } else {
+            updatedEnd = originalEvent.end
+        }
+        
+        // Create merged event with updated fields
+        // Use a temporary ID for the preview event (similar to create event flow)
+        let tempEventID = UUID().uuidString
+        let previewEvent = CalendarEvent(
+            id: tempEventID, // Use temporary ID for preview
+            title: metadata.summary ?? originalEvent.title,
+            description: metadata.description ?? originalEvent.description,
+            start: updatedStart,
+            end: updatedEnd,
+            attendees: originalEvent.attendees, // Preserve attendees
+            createdBy: originalEvent.createdBy, // Preserve createdBy
+            calendarId: calendarID,
+            location: metadata.location ?? originalEvent.location,
+            conference: originalEvent.conference // Preserve conference
         )
-
-        // Store the pending update event response for confirmation
-        self.pendingAction = .updateEvent(response)
+        
+        // Determine the day for the preview event (use updated start if available, otherwise original)
+        let previewStartDate = metadata.start?.dateTime ?? originalEvent.start?.dateTime
+        guard let eventStartDate = previewStartDate else {
+            print("ERROR: Event \(eventID) has no start date")
+            throw NSError(domain: "AgentViewModel", code: 1, userInfo: [NSLocalizedDescriptionKey: "Event has no start date"])
+        }
+        
+        let eventDay = calendar.startOfDay(for: eventStartDate)
+        
+        // Fetch the schedule for that day
+        let dateRange = self.dateRange(for: eventDay)
+        let startDateISO = Self.iso8601DateFormatter.string(from: dateRange.start)
+        let endDateISO = Self.iso8601DateFormatter.string(from: dateRange.end)
+        
+        var displayEvents = try await fetchScheduleEvents(
+            startDateISO: startDateISO,
+            endDateISO: endDateISO,
+            accessToken: accessToken
+        )
+        
+        // Find and hide the original event in displayEvents
+        if let originalIndex = displayEvents.firstIndex(where: { $0.event.id == eventID }) {
+            displayEvents[originalIndex].isHidden = true
+        }
+        
+        // Create preview DisplayEvent with .update style
+        let previewDisplayEvent = DisplayEvent(event: previewEvent, style: .update, isHidden: false)
+        displayEvents.append(previewDisplayEvent)
+        
+        // Sort events by start time
+        displayEvents.sort { event1, event2 in
+            guard let start1 = event1.event.start?.dateTime,
+                  let start2 = event2.event.start?.dateTime else {
+                return false
+            }
+            return start1 < start2
+        }
+        
+        // Set focus event with .update style (using preview event ID)
+        let focus = ScheduleFocusEvent(eventID: tempEventID, style: .update)
+        
+        // Update the schedule state directly
+        scheduleDate = dateRange.start
+        self.displayEvents = displayEvents
+        self.focusEvent = focus
+        hasLoadedSchedule = true
     }
 
     // MARK: - Create Event Handling
@@ -446,9 +575,12 @@ final class AgentViewModel: ObservableObject {
         let endDate = metadata.end.dateTime
         let timezone = TimeZone.autoupdatingCurrent.identifier
         
+        // Set the unified agent action state
+        self.agentAction = .createEvent(response)
+        
         // Use the day of the event's start date
         let eventDay = calendar.startOfDay(for: startDate)
-
+        
         // Fetch the schedule for that day
         let dateRange = self.dateRange(for: eventDay)
         let startDateISO = Self.iso8601DateFormatter.string(from: dateRange.start)
@@ -499,7 +631,7 @@ final class AgentViewModel: ObservableObject {
             return start1 < start2
         }
         
-        // Set focus event with .new style
+        // Set focus event with .new style (using temp event ID)
         let focus = ScheduleFocusEvent(eventID: tempEventID, style: .new)
         
         // Update the schedule state directly
@@ -507,24 +639,24 @@ final class AgentViewModel: ObservableObject {
         self.displayEvents = displayEvents
         self.focusEvent = focus
         hasLoadedSchedule = true
-        
-        // Store the pending create event response for confirmation
-        self.pendingAction = .createEvent(response)
     }
 
     // MARK: - Event Confirmation
     func confirmPendingAction(accessToken: String?) async {
-        guard let action = pendingAction else {
+        guard let action = agentAction else {
             return
         }
         
-        // Clear pending action immediately so modal disappears
-        pendingAction = nil
+        // Clear agent action immediately so modal disappears
+        agentAction = nil
         
         isConfirmingAction = true
         defer { isConfirmingAction = false }
         
         switch action {
+        case .showEvent, .showSchedule:
+            // No confirmation needed for these actions
+            break
         case .createEvent(let response):
             await confirmCreateEvent(response: response, accessToken: accessToken)
         case .deleteEvent(let response):
@@ -535,9 +667,12 @@ final class AgentViewModel: ObservableObject {
     }
     
     func cancelPendingAction() {
-        guard let action = pendingAction else { return }
+        guard let action = agentAction else { return }
         
         switch action {
+        case .showEvent, .showSchedule:
+            // Clear focus for show actions
+            focusEvent = nil
         case .createEvent:
             // Remove the temporary event from display events
             if let tempEventID = focusEvent?.eventID,
@@ -546,15 +681,28 @@ final class AgentViewModel: ObservableObject {
                 focusEvent = nil
             }
         case .deleteEvent:
-            // Clear the focus event to remove destructive style
+            // Clear the focus event to remove special styling
             focusEvent = nil
-        case .updateEvent:
-            // Clear the focus event to remove update style
+        case .updateEvent(let response):
+            // Remove the preview event and unhide the original event
+            let eventID = response.metadata.event_id
+            
+            // Remove the preview event (identified by focusEvent ID)
+            if let previewEventID = focusEvent?.eventID,
+               let previewIndex = displayEvents.firstIndex(where: { $0.event.id == previewEventID }) {
+                displayEvents.remove(at: previewIndex)
+            }
+            
+            // Unhide the original event
+            if let originalIndex = displayEvents.firstIndex(where: { $0.event.id == eventID && $0.isHidden }) {
+                displayEvents[originalIndex].isHidden = false
+            }
+            
             focusEvent = nil
         }
         
-        // Clear pending action
-        pendingAction = nil
+        // Clear agent action
+        agentAction = nil
     }
     
     private func confirmCreateEvent(response: CreateEventResponse, accessToken: String?) async {
@@ -565,7 +713,7 @@ final class AgentViewModel: ObservableObject {
         
         Task { @MainActor in
             do {
-                let token = try await resolveAccessToken(initial: accessToken)
+                var token = try await resolveAccessToken(initial: accessToken)
                 
                 // Create the event creation request
                 let createRequest = CreateEventRequest(
@@ -579,10 +727,22 @@ final class AgentViewModel: ObservableObject {
                 )
                 
                 // Call the calendar service to create the event
-                let createdResponse = try await calendarService.createEvent(
-                    accessToken: token,
-                    request: createRequest
-                )
+                let createdResponse: CalendarCreateEventResponse
+                do {
+                    createdResponse = try await calendarService.createEvent(
+                        accessToken: token,
+                        request: createRequest
+                    )
+                } catch CalendarServiceError.unauthorized {
+                    guard let refreshedToken = await AuthTokenProvider.shared.currentAccessToken() else {
+                        throw AccessTokenError.missingAuthProvider
+                    }
+                    token = refreshedToken
+                    createdResponse = try await calendarService.createEvent(
+                        accessToken: token,
+                        request: createRequest
+                    )
+                }
                 
                 // Reload the schedule to get the real event from Google Calendar
                 // This ensures the event displays properly without the .new style
@@ -614,7 +774,7 @@ final class AgentViewModel: ObservableObject {
 
         Task { @MainActor in
             do {
-                let token = try await resolveAccessToken(initial: accessToken)
+                var token = try await resolveAccessToken(initial: accessToken)
 
                 // Build update request from metadata (only include fields that are present)
                 let timezone = TimeZone.autoupdatingCurrent.identifier
@@ -629,26 +789,53 @@ final class AgentViewModel: ObservableObject {
                 )
 
                 // Call calendar service to apply the update
-                _ = try await calendarService.updateEvent(
-                    accessToken: token,
-                    calendarId: calendarID,
-                    eventId: eventID,
-                    request: updateRequest
-                )
-
-                // Determine the day of the updated event using metadata if available
-                if let startFromMetadata = metadata.start?.dateTime {
-                    let eventDay = calendar.startOfDay(for: startFromMetadata)
-                    loadSchedule(
-                        for: eventDay,
-                        force: true,
+                do {
+                    _ = try await calendarService.updateEvent(
                         accessToken: token,
-                        focusEvent: nil
+                        calendarId: calendarID,
+                        eventId: eventID,
+                        request: updateRequest
                     )
-                } else {
-                    // Fallback: reload current schedule if we don't have a start date
-                    loadCurrentDaySchedule(force: true)
+                } catch CalendarServiceError.unauthorized {
+                    guard let refreshedToken = await AuthTokenProvider.shared.currentAccessToken() else {
+                        throw AccessTokenError.missingAuthProvider
+                    }
+                    token = refreshedToken
+                    _ = try await calendarService.updateEvent(
+                        accessToken: token,
+                        calendarId: calendarID,
+                        eventId: eventID,
+                        request: updateRequest
+                    )
                 }
+
+                // Determine the day of the updated event
+                // First try metadata (if start time was updated), otherwise fetch the event
+                let eventStartDate: Date
+                if let startFromMetadata = metadata.start?.dateTime {
+                    eventStartDate = startFromMetadata
+                } else {
+                    // Fetch the updated event to get its current start date
+                    let updatedEvent = try await calendarService.fetchEvent(
+                        accessToken: token,
+                        calendarId: calendarID,
+                        eventId: eventID
+                    )
+                    guard let startDate = updatedEvent.start?.dateTime else {
+                        print("ERROR: Updated event \(eventID) has no start date")
+                        throw NSError(domain: "AgentViewModel", code: 1, userInfo: [NSLocalizedDescriptionKey: "Updated event has no start date"])
+                    }
+                    eventStartDate = startDate
+                }
+                
+                // Reload schedule for the event's day
+                let eventDay = calendar.startOfDay(for: eventStartDate)
+                loadSchedule(
+                    for: eventDay,
+                    force: true,
+                    accessToken: token,
+                    focusEvent: nil
+                )
 
                 print("Updated event: \(eventID)")
             } catch {
@@ -664,14 +851,26 @@ final class AgentViewModel: ObservableObject {
         
         Task { @MainActor in
             do {
-                let token = try await resolveAccessToken(initial: accessToken)
+                var token = try await resolveAccessToken(initial: accessToken)
                 
                 // Call the calendar service to delete the event
-                try await calendarService.deleteEvent(
-                    accessToken: token,
-                    calendarId: calendarID,
-                    eventId: eventID
-                )
+                do {
+                    try await calendarService.deleteEvent(
+                        accessToken: token,
+                        calendarId: calendarID,
+                        eventId: eventID
+                    )
+                } catch CalendarServiceError.unauthorized {
+                    guard let refreshedToken = await AuthTokenProvider.shared.currentAccessToken() else {
+                        throw AccessTokenError.missingAuthProvider
+                    }
+                    token = refreshedToken
+                    try await calendarService.deleteEvent(
+                        accessToken: token,
+                        calendarId: calendarID,
+                        eventId: eventID
+                    )
+                }
                 
                 // Clear focus event
                 focusEvent = nil
@@ -702,12 +901,21 @@ final class AgentViewModel: ObservableObject {
 
     // MARK: - Show Schedule Handling
     private func handleShowSchedule(agentResponse: AgentResponse, accessToken: String) async throws {
+        guard case .showSchedule(let response) = agentResponse else {
+            return
+        }
+        
+        // Set the unified agent action state
+        self.agentAction = .showSchedule(response)
+        // Set focus event immediately from agentAction
+        self.focusEvent = agentAction?.focusEvent
+        
         let config = showScheduleHandler.configuration(for: agentResponse)
         loadSchedule(
             for: config.date,
             force: true,
             accessToken: accessToken,
-            focusEvent: config.focusEvent
+            focusEvent: agentAction?.focusEvent ?? config.focusEvent
         )
     }
 
