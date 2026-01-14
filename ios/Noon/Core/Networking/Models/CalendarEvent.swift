@@ -279,6 +279,7 @@ struct DisplayEvent: Identifiable, Hashable, Sendable {
         case highlight
         case update
         case destructive
+        case new
     }
     
     let event: CalendarEvent

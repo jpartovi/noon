@@ -423,6 +423,8 @@ private extension NDayScheduleView {
             return .update
         case .destructive:
             return .destructive
+        case .new:
+            return .new
         }
     }
 }

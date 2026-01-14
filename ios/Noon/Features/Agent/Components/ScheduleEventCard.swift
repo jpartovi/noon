@@ -14,6 +14,7 @@ struct ScheduleEventCard: View {
         case highlight
         case update
         case destructive
+        case new
     }
 
     let title: String
@@ -30,6 +31,8 @@ struct ScheduleEventCard: View {
             return AnyShapeStyle(
                 ColorPalette.Semantic.highlightBackground
             )
+        case .new:
+            return AnyShapeStyle(Color.white)
         case .destructive:
             return AnyShapeStyle(ColorPalette.Surface.destructiveMuted)
         }
@@ -39,7 +42,7 @@ struct ScheduleEventCard: View {
         switch style {
         case .standard:
             return Color.black.opacity(0.15)
-        case .highlight, .update:
+        case .highlight, .update, .new:
             return ColorPalette.Semantic.primary.opacity(0.25)
         case .destructive:
             return Color.black.opacity(0.18)
@@ -110,7 +113,7 @@ private extension ScheduleEventCard {
 
     var textColor: Color {
         switch style {
-        case .standard, .highlight, .update:
+        case .standard, .highlight, .update, .new:
             return ColorPalette.Text.primary
         case .destructive:
             return ColorPalette.Text.primary.opacity(0.55)
@@ -119,7 +122,7 @@ private extension ScheduleEventCard {
 
     var secondaryTextColor: Color {
         switch style {
-        case .standard, .highlight, .update:
+        case .standard, .highlight, .update, .new:
             return ColorPalette.Text.secondary.opacity(0.75)
         case .destructive:
             return ColorPalette.Text.secondary.opacity(0.5)
@@ -128,7 +131,7 @@ private extension ScheduleEventCard {
 
     var strikeColor: Color {
         switch style {
-        case .standard, .highlight, .update:
+        case .standard, .highlight, .update, .new:
             return .clear
         case .destructive:
             return ColorPalette.Text.secondary.opacity(0.7)
@@ -143,7 +146,7 @@ private extension ScheduleEventCard {
             shape.stroke(ColorPalette.Text.secondary.opacity(0.45), lineWidth: 1)
         case .highlight:
             shape.stroke(ColorPalette.Gradients.highlightBorder, lineWidth: 1)
-        case .update:
+        case .update, .new:
             shape
                 .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [6, 4]))
                 .foregroundStyle(ColorPalette.Gradients.highlightBorder)

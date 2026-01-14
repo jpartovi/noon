@@ -237,6 +237,8 @@ final class AgentViewModel: ObservableObject {
             try await handleDeleteEvent(response: response, accessToken: accessToken)
         case .updateEvent(let response):
             try await handleUpdateEvent(response: response, accessToken: accessToken)
+        case .createEvent(let response):
+            try await handleCreateEvent(response: response, accessToken: accessToken)
         default:
             // TODO: Handle additional agent response types
             break
@@ -449,6 +451,80 @@ final class AgentViewModel: ObservableObject {
         hasLoadedSchedule = true
         
         print("Update event: Set schedule with \(displayEvents.count) events, scheduleDate: \(Self.iso8601DateFormatter.string(from: scheduleDate)), hasLoadedSchedule: \(hasLoadedSchedule)")
+    }
+
+    // MARK: - Create Event Handling
+    private func handleCreateEvent(response: CreateEventResponse, accessToken: String) async throws {
+        let metadata = response.metadata
+        let startDate = metadata.start.dateTime
+        let endDate = metadata.end.dateTime
+        let timezone = TimeZone.autoupdatingCurrent.identifier
+        
+        // Use the day of the event's start date
+        let eventDay = calendar.startOfDay(for: startDate)
+        let dateString = Self.iso8601DateFormatter.string(from: eventDay)
+        print("Create event called for event: \(metadata.summary), day: \(dateString)")
+        
+        // Fetch the schedule for that day
+        let dateRange = self.dateRange(for: eventDay)
+        let startDateISO = Self.iso8601DateFormatter.string(from: dateRange.start)
+        let endDateISO = Self.iso8601DateFormatter.string(from: dateRange.end)
+        
+        var displayEvents = try await fetchScheduleEvents(
+            startDateISO: startDateISO,
+            endDateISO: endDateISO,
+            accessToken: accessToken
+        )
+        
+        // Create a temporary CalendarEvent from the metadata
+        let tempEventID = UUID().uuidString
+        let startEventDateTime = CalendarEvent.EventDateTime(
+            dateTime: startDate,
+            date: nil,
+            timeZone: timezone
+        )
+        let endEventDateTime = CalendarEvent.EventDateTime(
+            dateTime: endDate,
+            date: nil,
+            timeZone: timezone
+        )
+        
+        let tempEvent = CalendarEvent(
+            id: tempEventID,
+            title: metadata.summary,
+            description: metadata.description,
+            start: startEventDateTime,
+            end: endEventDateTime,
+            attendees: [],
+            createdBy: nil,
+            calendarId: metadata.calendar_id,
+            location: metadata.location,
+            conference: nil
+        )
+        
+        // Add the temporary event to the display events with .new style
+        let newDisplayEvent = DisplayEvent(event: tempEvent, style: .new)
+        displayEvents.append(newDisplayEvent)
+        
+        // Sort events by start time
+        displayEvents.sort { event1, event2 in
+            guard let start1 = event1.event.start?.dateTime,
+                  let start2 = event2.event.start?.dateTime else {
+                return false
+            }
+            return start1 < start2
+        }
+        
+        // Set focus event with .new style
+        let focus = ScheduleFocusEvent(eventID: tempEventID, style: .new)
+        
+        // Update the schedule state directly
+        scheduleDate = dateRange.start
+        self.displayEvents = displayEvents
+        self.focusEvent = focus
+        hasLoadedSchedule = true
+        
+        print("Create event: Set schedule with \(displayEvents.count) events, scheduleDate: \(Self.iso8601DateFormatter.string(from: scheduleDate)), hasLoadedSchedule: \(hasLoadedSchedule)")
     }
 
     // MARK: - Show Schedule Handling
