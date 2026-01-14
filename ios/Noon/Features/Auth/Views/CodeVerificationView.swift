@@ -70,6 +70,10 @@ struct CodeVerificationView: View {
         }
         .frame(maxWidth: 420)
         .padding()
+        .contentShape(Rectangle())
+        .onTapGesture {
+            focusedField.wrappedValue = nil
+        }
     }
 }
 
