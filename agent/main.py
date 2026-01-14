@@ -58,6 +58,7 @@ class State(TypedDict):
     message: Optional[str]  # For error responses
     current_time: Optional[str]  # ISO format datetime string in user's timezone with offset (e.g., "2026-01-13T08:47:00-08:00")
     timezone: Optional[str]  # IANA timezone name (e.g., "America/Los_Angeles")
+    current_day_of_week: Optional[str]  # Full day name (e.g., "Monday", "Tuesday")
 
 
 class OutputState(TypedDict):
@@ -88,17 +89,57 @@ def agent_node(state: State) -> Dict[str, Any]:
     # Get time context from state
     current_time = state.get("current_time")
     user_timezone = state.get("timezone", "UTC")
+    current_day_of_week = state.get("current_day_of_week")
     
     # Build time context string for system message
     time_context = ""
     if current_time and user_timezone:
+        # Extract date from current_time (ISO format: YYYY-MM-DDTHH:MM:SS...)
+        current_date = current_time.split("T")[0] if "T" in current_time else ""
+        day_info = f"- Today is {current_day_of_week}\n" if current_day_of_week else ""
+        date_info = f"- Today's date: {current_date}\n" if current_date else ""
+        
         time_context = f"""
 TIME CONTEXT:
 - Current time: {current_time} (in user's timezone: {user_timezone})
-- When user says "tomorrow", calculate the date based on the current date in their timezone ({user_timezone})
-- When user says "next week", calculate based on the current date in their timezone
-- ALWAYS use timezone-aware ISO strings with offset (e.g., "2026-01-14T00:00:00-08:00") when calling tools with datetime parameters
-- The current_time is already in the user's timezone, so "tomorrow" means the next day from that time
+{day_info}{date_info}
+REASONING PROCESS (REQUIRED):
+Before calculating any dates, you MUST follow this reasoning process:
+
+Today is {current_day_of_week}, {current_date}.
+
+When interpreting relative dates:
+1. First identify what day/period is being referenced
+2. Calculate from today's date ({current_date})
+3. "Weekend" always means Saturday and Sunday
+4. "This [day/weekend]" means the upcoming occurrence within this calendar week (Mon-Sun)
+5. "Next [day/weekend]" means the occurrence in the following calendar week
+
+Before providing dates, show your reasoning:
+- What is today? {current_day_of_week}, {current_date}
+- What period is requested? [Identify from user query]
+- What are the specific dates? [Calculate and verify they match the requested period]
+- Verification: For weekends, verify the dates are Saturday-Sunday. For days, verify the day name matches.
+
+DATE PARSING:
+- "tomorrow" = next day from current date
+- "next week" = week starting after this weekend
+- "on [day]" or "[day]" = next occurrence of that day (if before that day this week, use this week; otherwise use next week)
+- "this [day]" = that day of current week (if past, use next week)
+- "next [day]" = that day of next week (after this weekend)
+- "this weekend" = Saturday and Sunday of current week (CRITICAL: "Weekend" ALWAYS and ONLY means Saturday and Sunday. It NEVER means Monday, Tuesday, Wednesday, Thursday, or Friday. To calculate: 1) Find the next Saturday from today. 2) Use that Saturday and the following Sunday. 3) Verify: The start date MUST be a Saturday, and the end date MUST be a Sunday. If you calculate dates that are not Saturday-Sunday, you made an error - recalculate.)
+- "next weekend" = Saturday and Sunday of next week (CRITICAL: "Weekend" ALWAYS and ONLY means Saturday and Sunday. To calculate: 1) First find "this weekend" (Saturday-Sunday). 2) Add exactly 7 days to get next weekend's Saturday. 3) Next weekend's Sunday is the day after next weekend's Saturday. 4) Verify: The start date MUST be a Saturday, and the end date MUST be a Sunday. If you calculate dates that are not Saturday-Sunday, you made an error - recalculate.)
+
+EXAMPLES (assuming today is Tuesday, December 23):
+- "on Friday" = Friday, December 26 (this week)
+- "next Thursday" = Thursday, January 1 (next week)
+- "this Friday" = Friday, December 26 (this week)
+- "this weekend" = Saturday, December 27 and Sunday, December 28 (00:00:00 Saturday to 23:59:59 Sunday) - ALWAYS Saturday-Sunday, never any other days
+- "next weekend" = Saturday, January 3 and Sunday, January 4 (00:00:00 Saturday to 23:59:59 Sunday) - ALWAYS Saturday-Sunday, never any other days
+- "next week" = week starting Monday, December 29
+
+ALWAYS use timezone-aware ISO strings with offset (e.g., "2026-01-14T00:00:00-08:00") when calling tools with datetime parameters.
+Calculate all relative dates based on current_time in the user's timezone ({user_timezone}).
 """
     
     # System message with strong instructions - ensure it's always first
@@ -184,6 +225,22 @@ EXAMPLE TRAJECTORIES:
 
 6. "Can you book a haircut for me?"
    → do_nothing(reason: "unsupported request")
+
+7. "Show me my schedule on Friday"
+   → show_schedule(start_time: Friday 12:00 AM, end_time: Friday 11:59 PM)
+   Note: If today is before Friday, use this week's Friday; if today is Friday or after, use next week's Friday
+
+8. "What's on my calendar next Thursday?"
+   → show_schedule(start_time: next Thursday 12:00 AM, end_time: next Thursday 11:59 PM)
+   Note: "next Thursday" means Thursday of next week (after this weekend)
+
+9. "Show me this weekend"
+   → show_schedule(start_time: Saturday 00:00:00, end_time: Sunday 23:59:59)
+   CRITICAL: Weekend means Saturday-Sunday ONLY. Find the next Saturday from today, then use that Saturday and the following Sunday. Verify the dates are Saturday-Sunday before calling the tool.
+
+10. "What's on my calendar next weekend?"
+   → show_schedule(start_time: next weekend Saturday 00:00:00, end_time: next weekend Sunday 23:59:59)
+   CRITICAL: Weekend means Saturday-Sunday ONLY. Calculate this weekend first, then add 7 days to get next weekend's Saturday. Verify the dates are Saturday-Sunday before calling the tool.
 
 PROCESSING TOOL RESULTS:
 When internal tools return results, you MUST extract the necessary information and call an external tool:

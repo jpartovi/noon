@@ -209,6 +209,7 @@ async def agent_action(
             user_tz = ZoneInfo(user_timezone)
             current_user_time = current_utc.astimezone(user_tz)
             current_time_str = current_user_time.isoformat()
+            current_day_of_week = current_user_time.strftime("%A")  # Full day name
         except Exception as e:
             logger.error(
                 f"Invalid timezone user_id={current_user.id} timezone={user_timezone}: {e}",
@@ -230,6 +231,7 @@ async def agent_action(
             "terminated": False,
             "current_time": current_time_str,
             "timezone": user_timezone,
+            "current_day_of_week": current_day_of_week,
         }
 
         logger.info(
