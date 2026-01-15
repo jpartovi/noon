@@ -52,7 +52,8 @@ struct AgentView: View {
                 
                 // Modal appears above microphone button when there's an agent action requiring confirmation
                 // This increases the safeAreaInset height, shrinking the schedule view above
-                if let agentAction = viewModel.agentAction, agentAction.requiresConfirmation {
+                // Only show modal once schedule is ready AND transcription is cleared to ensure smooth transition
+                if let agentAction = viewModel.agentAction, agentAction.requiresConfirmation, viewModel.hasLoadedSchedule, viewModel.transcriptionText == nil {
                     VStack {
                         ConfirmationModal(
                             actionType: actionType(for: agentAction),
@@ -85,7 +86,7 @@ struct AgentView: View {
             if didConfigureViewModel == false {
                 viewModel.configure(authProvider: authViewModel)
                 didConfigureViewModel = true
-                viewModel.loadCurrentDaySchedule()
+                try? await viewModel.loadCurrentDaySchedule()
             }
         }
     }

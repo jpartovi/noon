@@ -237,9 +237,9 @@ final class AgentViewModel: ObservableObject {
         }
     }
 
-    func loadCurrentDaySchedule(force: Bool = false) {
+    func loadCurrentDaySchedule(force: Bool = false) async throws {
         let today = Date()
-        loadSchedule(for: today, force: force)
+        try await loadSchedule(for: today, force: force)
     }
 
     /// Load schedule for a given date using the unified `/api/v1/calendars/schedule` endpoint.
@@ -258,7 +258,7 @@ final class AgentViewModel: ObservableObject {
         force: Bool,
         accessToken initialToken: String? = nil,
         focusEvent: ScheduleFocusEvent? = nil
-    ) {
+    ) async throws {
         guard isLoadingSchedule == false else {
             return
         }
@@ -266,35 +266,28 @@ final class AgentViewModel: ObservableObject {
             return
         }
 
-        Task { @MainActor in
-            isLoadingSchedule = true
-            defer {
-                isLoadingSchedule = false
-            }
-
-            do {
-                let dateRange = self.dateRange(for: date)
-                
-                let startDateISO = Self.iso8601DateFormatter.string(from: dateRange.start)
-                let endDateISO = Self.iso8601DateFormatter.string(from: dateRange.end)
-                
-                let token = try await resolveAccessToken(initial: initialToken)
-                let events = try await fetchScheduleEvents(
-                    startDateISO: startDateISO,
-                    endDateISO: endDateISO,
-                    accessToken: token
-                )
-
-                print("Loaded schedule: \(events.count) events")
-                scheduleDate = dateRange.start
-                displayEvents = events
-                self.focusEvent = focusEvent
-                hasLoadedSchedule = true
-            } catch {
-                print("Error loading schedule: \(error)")
-                handle(error: error)
-            }
+        isLoadingSchedule = true
+        defer {
+            isLoadingSchedule = false
         }
+
+        let dateRange = self.dateRange(for: date)
+        
+        let startDateISO = Self.iso8601DateFormatter.string(from: dateRange.start)
+        let endDateISO = Self.iso8601DateFormatter.string(from: dateRange.end)
+        
+        let token = try await resolveAccessToken(initial: initialToken)
+        let events = try await fetchScheduleEvents(
+            startDateISO: startDateISO,
+            endDateISO: endDateISO,
+            accessToken: token
+        )
+
+        print("Loaded schedule: \(events.count) events")
+        scheduleDate = dateRange.start
+        displayEvents = events
+        self.focusEvent = focusEvent
+        hasLoadedSchedule = true
     }
 
     private func localizedMessage(for error: Error) -> String {
@@ -456,10 +449,8 @@ final class AgentViewModel: ObservableObject {
         let eventID = response.metadata.event_id
         let calendarID = response.metadata.calendar_id
         
-        // Set the unified agent action state
-        self.agentAction = .showEvent(response)
-        // Set focus event immediately from agentAction
-        self.focusEvent = agentAction?.focusEvent
+        // Calculate focus event from response (before setting agentAction)
+        let focus = ScheduleFocusEvent(eventID: eventID, style: .highlight)
         
         // Fetch the event to get its start date
         let event = try await fetchEventWithRefresh(
@@ -476,13 +467,17 @@ final class AgentViewModel: ObservableObject {
         // Use the day of the event's start date
         let eventDay = calendar.startOfDay(for: eventStartDate)
 
-        // Load schedule for the event's day with focus from agentAction
-        loadSchedule(
+        // Load schedule for the event's day with focus event
+        try await loadSchedule(
             for: eventDay,
             force: true,
             accessToken: accessToken,
-            focusEvent: agentAction?.focusEvent
+            focusEvent: focus
         )
+        
+        // Set the unified agent action state AFTER schedule is ready
+        // This ensures transcription stays visible until schedule is ready
+        self.agentAction = .showEvent(response)
     }
 
     // MARK: - Delete Event Handling
@@ -490,10 +485,8 @@ final class AgentViewModel: ObservableObject {
         let eventID = response.metadata.event_id
         let calendarID = response.metadata.calendar_id
         
-        // Set the unified agent action state
-        self.agentAction = .deleteEvent(response)
-        // Set focus event immediately from agentAction
-        self.focusEvent = agentAction?.focusEvent
+        // Calculate focus event from response (before setting agentAction)
+        let focus = ScheduleFocusEvent(eventID: eventID, style: .destructive)
         
         // Fetch the event to get its start date
         let event = try await fetchEventWithRefresh(
@@ -510,13 +503,17 @@ final class AgentViewModel: ObservableObject {
         // Use the day of the event's start date
         let eventDay = calendar.startOfDay(for: eventStartDate)
         
-        // Load schedule for the event's day with focus from agentAction
-        loadSchedule(
+        // Load schedule for the event's day with focus event
+        try await loadSchedule(
             for: eventDay,
             force: true,
             accessToken: accessToken,
-            focusEvent: agentAction?.focusEvent
+            focusEvent: focus
         )
+        
+        // Set the unified agent action state AFTER schedule is ready
+        // This ensures modal only appears once schedule and transcription are coordinated
+        self.agentAction = .deleteEvent(response)
     }
 
     // MARK: - Update Event Handling
@@ -524,9 +521,6 @@ final class AgentViewModel: ObservableObject {
         let metadata = response.metadata
         let eventID = metadata.event_id
         let calendarID = metadata.calendar_id
-        
-        // Set the unified agent action state
-        self.agentAction = .updateEvent(response)
         
         // Fetch the original event to get its current data
         let originalEvent = try await fetchEventWithRefresh(
@@ -624,6 +618,10 @@ final class AgentViewModel: ObservableObject {
         self.displayEvents = displayEvents
         self.focusEvent = focus
         hasLoadedSchedule = true
+        
+        // Set the unified agent action state AFTER schedule is ready
+        // This ensures modal only appears once schedule and transcription are coordinated
+        self.agentAction = .updateEvent(response)
     }
 
     // MARK: - Create Event Handling
@@ -632,9 +630,6 @@ final class AgentViewModel: ObservableObject {
         let startDate = metadata.start.dateTime
         let endDate = metadata.end.dateTime
         let timezone = TimeZone.autoupdatingCurrent.identifier
-        
-        // Set the unified agent action state
-        self.agentAction = .createEvent(response)
         
         // Use the day of the event's start date
         let eventDay = calendar.startOfDay(for: startDate)
@@ -697,6 +692,10 @@ final class AgentViewModel: ObservableObject {
         self.displayEvents = displayEvents
         self.focusEvent = focus
         hasLoadedSchedule = true
+        
+        // Set the unified agent action state AFTER schedule is ready
+        // This ensures modal only appears once schedule and transcription are coordinated
+        self.agentAction = .createEvent(response)
     }
 
     // MARK: - Event Confirmation
@@ -810,7 +809,7 @@ final class AgentViewModel: ObservableObject {
                 
                 // Reload schedule for the day of the created event
                 // No focus event - display normally without special styling
-                loadSchedule(
+                try await loadSchedule(
                     for: eventDay,
                     force: true,
                     accessToken: token,
@@ -888,7 +887,7 @@ final class AgentViewModel: ObservableObject {
                 
                 // Reload schedule for the event's day
                 let eventDay = calendar.startOfDay(for: eventStartDate)
-                loadSchedule(
+                try await loadSchedule(
                     for: eventDay,
                     force: true,
                     accessToken: token,
@@ -938,7 +937,7 @@ final class AgentViewModel: ObservableObject {
                 if let targetEvent = displayEvents.first(where: { $0.event.id == eventID }),
                    let eventStartDate = targetEvent.event.start?.dateTime {
                     let eventDay = calendar.startOfDay(for: eventStartDate)
-                    loadSchedule(
+                    try await loadSchedule(
                         for: eventDay,
                         force: true,
                         accessToken: token,
@@ -946,7 +945,8 @@ final class AgentViewModel: ObservableObject {
                     )
                 } else {
                     // Fallback: reload current schedule
-                    loadCurrentDaySchedule(force: true)
+                    let today = Date()
+                    try await loadSchedule(for: today, force: true)
                 }
                 
                 print("Deleted event: \(eventID)")
@@ -963,18 +963,17 @@ final class AgentViewModel: ObservableObject {
             return
         }
         
-        // Set the unified agent action state
-        self.agentAction = .showSchedule(response)
-        // Set focus event immediately from agentAction
-        self.focusEvent = agentAction?.focusEvent
-        
         let config = showScheduleHandler.configuration(for: agentResponse)
-        loadSchedule(
+        try await loadSchedule(
             for: config.date,
             force: true,
             accessToken: accessToken,
-            focusEvent: agentAction?.focusEvent ?? config.focusEvent
+            focusEvent: config.focusEvent
         )
+        
+        // Set the unified agent action state AFTER schedule is ready
+        // This ensures transcription stays visible until schedule is ready
+        self.agentAction = .showSchedule(response)
     }
 
     private enum AccessTokenError: Error {
