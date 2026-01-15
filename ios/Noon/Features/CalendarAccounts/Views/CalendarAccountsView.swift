@@ -125,13 +125,7 @@ private extension CalendarAccountsView {
     var content: some View {
         if let message = viewModel.errorMessage {
             errorState(message: message)
-        } else if viewModel.accounts.isEmpty {
-            if viewModel.isLoading {
-                EmptyView()
-            } else {
-            emptyState
-            }
-        } else {
+        } else if !viewModel.accounts.isEmpty {
             accountsList
         }
 
@@ -158,19 +152,6 @@ private extension CalendarAccountsView {
             RoundedRectangle(cornerRadius: 20)
                 .fill(ColorPalette.Surface.elevated.opacity(0.6))
         )
-    }
-
-    var emptyState: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "calendar.badge.exclamationmark")
-                .imageScale(.large)
-                .foregroundStyle(ColorPalette.Semantic.primary)
-            Text("No calendar accounts connected yet")
-                .font(.subheadline)
-                .foregroundStyle(ColorPalette.Text.secondary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 48)
     }
 
     var accountsList: some View {
@@ -204,7 +185,7 @@ private extension CalendarAccountsView {
                         .font(.system(size: 18, weight: .semibold))
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(ColorPalette.Semantic.destructive)
+                .foregroundStyle(ColorPalette.Surface.destructiveMuted)
                 .accessibilityLabel("Remove \(account.email)")
             }
         }
