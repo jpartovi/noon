@@ -15,6 +15,10 @@ struct NDayScheduleView: View {
     let focusEvent: ScheduleFocusEvent?
 
     private let hours = Array(0..<24)
+    
+    // Event spacing
+    private let horizontalEventInset: CGFloat = 5
+    private let verticalEventInset: CGFloat = 2
     @State private var scrollViewProxy: ScrollViewProxy?
     @State private var lastScrolledFocusEventID: String?
 
@@ -125,7 +129,7 @@ struct NDayScheduleView: View {
         contentWidth: CGFloat,
         horizontalPadding: CGFloat
     ) -> some View {
-        let cornerRadius: CGFloat = 8
+        let cornerRadius: CGFloat = 5
 
         let content = ZStack(alignment: .topLeading) {
             Canvas { context, _ in
@@ -175,12 +179,13 @@ struct NDayScheduleView: View {
                 let columnLeading = columnLeadings[dayIndex]
                 
                 // When n=1, use totalEventWidth (which equals gridWidth) to match ScheduleView exactly
-                let eventWidth = numberOfDays == 1 ? totalEventWidth : dayColumnWidth
-                let centerX = numberOfDays == 1 ? gridLeading + totalEventWidth / 2 : columnLeading + dayColumnWidth / 2
+                let dayColWidth = numberOfDays == 1 ? totalEventWidth : dayColumnWidth
+                let eventWidth = dayColWidth - horizontalEventInset
+                let centerX = numberOfDays == 1 ? gridLeading + dayColWidth / 2 : columnLeading + eventWidth / 2
                 
                 ForEach(dayEvents) { event in
                     if let layout = layoutInfo(for: event, day: day, focusEvent: focusEvent) {
-                        let eventHeight = hourHeight * CGFloat(layout.durationHours)
+                        let eventHeight = (hourHeight * CGFloat(layout.durationHours)) - verticalEventInset
                         let topPosition = timelineTopInset + hourHeight * CGFloat(layout.startHour)
                         let centerY = topPosition + eventHeight / 2
 
