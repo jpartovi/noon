@@ -26,7 +26,8 @@ struct AgentView: View {
                     startDate: viewModel.scheduleDate,
                     numberOfDays: viewModel.numberOfDays,
                     events: viewModel.displayEvents,
-                    focusEvent: viewModel.focusEvent
+                    focusEvent: viewModel.focusEvent,
+                    userTimezone: viewModel.userTimezone
                 )
                 .padding(.horizontal, 4)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)

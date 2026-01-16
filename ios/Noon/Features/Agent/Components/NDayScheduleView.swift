@@ -13,6 +13,7 @@ struct NDayScheduleView: View {
     let numberOfDays: Int
     let events: [DisplayEvent]
     let focusEvent: ScheduleFocusEvent?
+    let userTimezone: String?
 
     private let hours = Array(0..<24)
     
@@ -29,12 +30,14 @@ struct NDayScheduleView: View {
         startDate: Date,
         numberOfDays: Int = 3,
         events: [DisplayEvent],
-        focusEvent: ScheduleFocusEvent? = nil
+        focusEvent: ScheduleFocusEvent? = nil,
+        userTimezone: String? = nil
     ) {
         self.startDate = calendar.startOfDay(for: startDate)
         self.numberOfDays = max(1, numberOfDays)
         self.events = events
         self.focusEvent = focusEvent
+        self.userTimezone = userTimezone
     }
 
     var body: some View {
@@ -58,11 +61,33 @@ struct NDayScheduleView: View {
             let columnLeadings = (0..<numberOfDays).map { index in
                 gridLeading + dayColumnWidth * CGFloat(index)
             }
+            
+            // Generate segment cards once for all days
+            let segmentCards = generateSegmentCards(from: events, dates: dates)
 
-            VStack(alignment: .leading, spacing: 12) {
-                dateHeaders(dates: dates, columnLeadings: columnLeadings, dayColumnWidth: dayColumnWidth, gridLeading: gridLeading)
+            VStack(alignment: .leading, spacing: 0) {
+                // Date headers row with timezone label
+                HStack(alignment: .top, spacing: 0) {
+                    timezoneLabel(
+                        timeLabelAreaWidth: timeLabelAreaWidth,
+                        labelSpacing: labelSpacing
+                    )
+                    dateHeaders(dates: dates, columnLeadings: columnLeadings, dayColumnWidth: dayColumnWidth, gridLeading: gridLeading)
+                }
+                
+                allDayEventsSection(
+                    segmentCards: segmentCards,
+                    columnLeadings: columnLeadings,
+                    dayColumnWidth: dayColumnWidth,
+                    gridLeading: gridLeading,
+                    totalEventWidth: totalEventWidth,
+                    dates: dates,
+                    lineColor: lineColor
+                )
+                .padding(.leading, gridLeading)
 
                 scheduleScrollView(
+                    segmentCards: segmentCards,
                     totalEventWidth: totalEventWidth,
                     gridLeading: gridLeading,
                     dayColumnWidth: dayColumnWidth,
@@ -75,7 +100,8 @@ struct NDayScheduleView: View {
                     labelWidth: labelWidth,
                     labelSpacing: labelSpacing,
                     contentWidth: geometry.size.width,
-                    horizontalPadding: horizontalPadding
+                    horizontalPadding: horizontalPadding,
+                    focusEvent: focusEvent
                 )
                 .padding(.bottom, scheduleBottomInset)
             }
@@ -85,6 +111,147 @@ struct NDayScheduleView: View {
         .padding(.bottom, 12)
     }
 
+    @ViewBuilder
+    private func allDayEventsSection(
+        segmentCards: [EventSegmentCard],
+        columnLeadings: [CGFloat],
+        dayColumnWidth: CGFloat,
+        gridLeading: CGFloat,
+        totalEventWidth: CGFloat,
+        dates: [Date],
+        lineColor: Color
+    ) -> some View {
+        let allDaySegments = segmentCards.filter { $0.isAllDay }
+        
+        if !allDaySegments.isEmpty {
+            let rows = packAllDayEventsIntoRows(allDaySegments, dates: dates)
+            let eventHeight: CGFloat = 20
+            let rowSpacing: CGFloat = verticalEventInset  // 2px spacing between rows
+            let rowHeight: CGFloat = eventHeight + rowSpacing  // 22px per row
+            // Total height: for N rows, we need (N * eventHeight) + ((N-1) * rowSpacing)
+            // Or: (N-1) * rowHeight + eventHeight
+            let topPadding: CGFloat = 4
+            let bottomPadding: CGFloat = 2
+            let totalHeight: CGFloat = rows.isEmpty ? 0 : (CGFloat(rows.count - 1) * rowHeight) + eventHeight + topPadding + bottomPadding
+            
+            ZStack(alignment: .topLeading) {
+                // Border lines at top and bottom (invisible)
+                Canvas { context, size in
+                    // Top border line
+                    var topPath = Path()
+                    topPath.move(to: CGPoint(x: 0, y: 0))
+                    topPath.addLine(to: CGPoint(x: size.width, y: 0))
+                    context.stroke(topPath, with: .color(lineColor), lineWidth: 1)
+                    
+                    // Bottom border line
+                    var bottomPath = Path()
+                    bottomPath.move(to: CGPoint(x: 0, y: totalHeight))
+                    bottomPath.addLine(to: CGPoint(x: size.width, y: totalHeight))
+                    context.stroke(bottomPath, with: .color(lineColor), lineWidth: 1)
+                }
+                .frame(maxWidth: .infinity)
+                .opacity(0)  // Invisible but still takes up space for layout
+                
+                // Event cards
+                ForEach(rows, id: \.rowIndex) { row in
+                    ForEach(row.segments, id: \.id) { segment in
+                        allDayEventCard(
+                            segment: segment,
+                            columnLeadings: columnLeadings,
+                            dayColumnWidth: dayColumnWidth,
+                            gridLeading: gridLeading,
+                            totalEventWidth: totalEventWidth,
+                            dates: dates,
+                            numberOfDays: numberOfDays
+                        )
+                        .offset(y: topPadding + CGFloat(row.rowIndex) * rowHeight)
+                    }
+                }
+            }
+            .frame(height: totalHeight)
+        }
+    }
+    
+    private func allDayEventCard(
+        segment: EventSegmentCard,
+        columnLeadings: [CGFloat],
+        dayColumnWidth: CGFloat,
+        gridLeading: CGFloat,
+        totalEventWidth: CGFloat,
+        dates: [Date],
+        numberOfDays: Int
+    ) -> some View {
+        let cardWidth: CGFloat
+        let centerX: CGFloat
+        let cornerRadius: CGFloat = 5
+        
+        // ZStack coordinate system starts at 0 (padding is applied to parent)
+        // All calculations should be relative to this origin
+        if segment.isSpanning {
+            // Spanning card: calculate width based on number of days it spans
+            let dayIndices = getDayIndices(for: segment, dates: dates)
+            let spanCount = dayIndices.count
+            // Width = (number of days * dayColumnWidth) - horizontalEventInset
+            // This matches the pattern: multiples of day width minus one inset
+            // Example: 2 days = 2 * dayColumnWidth - 5px
+            let spanWidth = CGFloat(spanCount) * dayColumnWidth - horizontalEventInset
+            // cardWidth is used for positioning, actual card width is spanWidth
+            cardWidth = CGFloat(spanCount) * dayColumnWidth  // Full width including space for inset
+            // For alignment, we want left edge at 0 (same as non-spanning in first column)
+            centerX = spanWidth / 2  // Center the card (actual width is spanWidth, so center at spanWidth/2)
+        } else {
+            // Single-day card in appropriate column - match regular event alignment
+            // Find which column this day is in
+            if let dayIndex = dates.firstIndex(where: { calendar.isDate($0, inSameDayAs: segment.day) }) {
+                let dayColWidth = numberOfDays == 1 ? totalEventWidth : dayColumnWidth
+                let eventWidth = dayColWidth - horizontalEventInset
+                cardWidth = dayColWidth
+                // Calculate centerX relative to padded ZStack origin (0)
+                let columnStart = CGFloat(dayIndex) * dayColumnWidth
+                centerX = columnStart + eventWidth / 2
+            } else {
+                // Fallback to first column
+                let dayColWidth = numberOfDays == 1 ? totalEventWidth : dayColumnWidth
+                let eventWidth = dayColWidth - horizontalEventInset
+                cardWidth = dayColWidth
+                centerX = eventWidth / 2  // Relative to padded ZStack origin (0)
+            }
+        }
+        
+        let style: ScheduleEventCard.Style
+        if let focusEvent = self.focusEvent, focusEvent.eventID == segment.eventID {
+            style = cardStyle(for: focusEvent.style)
+        } else {
+            style = cardStyle(for: segment.event.style)
+        }
+        
+        let title = segment.event.event.title?.isEmpty == false ? segment.event.event.title! : "Untitled Event"
+        
+        let actualCardWidth = cardWidth - horizontalEventInset
+        
+        return ScheduleEventCard(
+            title: title,
+            cornerRadius: cornerRadius,
+            style: style
+        )
+        .frame(width: actualCardWidth, height: 20, alignment: .top)
+        .offset(x: centerX - actualCardWidth / 2, y: 0)
+    }
+    
+    @ViewBuilder
+    private func timezoneLabel(
+        timeLabelAreaWidth: CGFloat,
+        labelSpacing: CGFloat
+    ) -> some View {
+        let abbreviation = getTimezoneAbbreviation(from: userTimezone)
+        Text(abbreviation)
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(ColorPalette.Text.secondary)
+            .frame(width: timeLabelAreaWidth, alignment: .trailing)
+            .padding(.trailing, labelSpacing)
+            .opacity(0)  // Hidden but still takes up space for layout
+    }
+    
     @ViewBuilder
     private func dateHeaders(
         dates: [Date],
@@ -107,7 +274,6 @@ struct NDayScheduleView: View {
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(ColorPalette.Text.secondary)
                         .frame(width: dayColumnWidth, alignment: .leading)
-                        .padding(.leading, index == 0 ? columnLeadings[0] : 0)
                 }
             }
             .accessibilityIdentifier("schedule-date-headers")
@@ -116,6 +282,7 @@ struct NDayScheduleView: View {
 
     @ViewBuilder
     private func scheduleScrollView(
+        segmentCards: [EventSegmentCard],
         totalEventWidth: CGFloat,
         gridLeading: CGFloat,
         dayColumnWidth: CGFloat,
@@ -128,7 +295,8 @@ struct NDayScheduleView: View {
         labelWidth: CGFloat,
         labelSpacing: CGFloat,
         contentWidth: CGFloat,
-        horizontalPadding: CGFloat
+        horizontalPadding: CGFloat,
+        focusEvent: ScheduleFocusEvent?
     ) -> some View {
         let cornerRadius: CGFloat = 5
 
@@ -174,9 +342,10 @@ struct NDayScheduleView: View {
                     .id("hour-\(hourFraction)")
             }
             
-            // Render events for each day column
+            // Render timed segment cards for each day column
+            let timedSegments = segmentCards.filter { !$0.isAllDay }
             ForEach(Array(dates.enumerated()), id: \.element) { dayIndex, day in
-                let dayEvents = eventsForDay(events, day: day)
+                let daySegments = timedSegments.filter { calendar.isDate($0.day, inSameDayAs: day) }
                 let columnLeading = columnLeadings[dayIndex]
                 
                 // When n=1, use totalEventWidth (which equals gridWidth) to match ScheduleView exactly
@@ -184,8 +353,8 @@ struct NDayScheduleView: View {
                 let eventWidth = dayColWidth - horizontalEventInset
                 let centerX = numberOfDays == 1 ? gridLeading + dayColWidth / 2 : columnLeading + eventWidth / 2
                 
-                ForEach(dayEvents) { event in
-                    if let layout = layoutInfo(for: event, day: day, focusEvent: focusEvent) {
+                ForEach(daySegments) { segment in
+                    if let layout = layoutInfo(for: segment, focusEvent: focusEvent) {
                         let eventHeight = max((hourHeight * CGFloat(layout.durationHours)) - verticalEventInset, minimumEventHeight)
                         let topPosition = timelineTopInset + hourHeight * CGFloat(layout.startHour)
                         let centerY = topPosition + eventHeight / 2
@@ -215,6 +384,7 @@ struct NDayScheduleView: View {
                     scrollViewProxy = proxy
                     scrollToFocusEventIfNeeded(
                         proxy: proxy,
+                        segmentCards: segmentCards,
                         dates: dates,
                         gridHeight: gridHeight,
                         timelineTopInset: timelineTopInset,
@@ -224,6 +394,7 @@ struct NDayScheduleView: View {
                 .onChange(of: focusEvent?.eventID) {
                     scrollToFocusEventIfNeeded(
                         proxy: proxy,
+                        segmentCards: segmentCards,
                         dates: dates,
                         gridHeight: gridHeight,
                         timelineTopInset: timelineTopInset,
@@ -239,6 +410,7 @@ struct NDayScheduleView: View {
                     scrollViewProxy = proxy
                     scrollToFocusEventIfNeeded(
                         proxy: proxy,
+                        segmentCards: segmentCards,
                         dates: dates,
                         gridHeight: gridHeight,
                         timelineTopInset: timelineTopInset,
@@ -248,6 +420,7 @@ struct NDayScheduleView: View {
                 .onChange(of: focusEvent?.eventID) {
                     scrollToFocusEventIfNeeded(
                         proxy: proxy,
+                        segmentCards: segmentCards,
                         dates: dates,
                         gridHeight: gridHeight,
                         timelineTopInset: timelineTopInset,
@@ -287,6 +460,7 @@ struct NDayScheduleView: View {
     
     private func scrollToFocusEventIfNeeded(
         proxy: ScrollViewProxy,
+        segmentCards: [EventSegmentCard],
         dates: [Date],
         gridHeight: CGFloat,
         timelineTopInset: CGFloat,
@@ -302,12 +476,20 @@ struct NDayScheduleView: View {
             return
         }
         
-        guard let targetEvent = events.first(where: { $0.id == focusEvent.eventID }),
-              let targetDay = dates.first(where: { day in
-                  guard let startDate = targetEvent.event.start?.dateTime else { return false }
-                  return calendar.isDate(startDate, inSameDayAs: day)
-              }),
-              let layout = layoutInfo(for: targetEvent, day: targetDay, focusEvent: focusEvent) else {
+        // Find first visible segment card with matching eventID
+        guard let targetSegment = segmentCards.first(where: { $0.eventID == focusEvent.eventID }) else {
+            return
+        }
+        
+        // For all-day events, scroll to top (all-day section is already visible at top)
+        if targetSegment.isAllDay {
+            // All-day events are already visible at the top, no scrolling needed
+            lastScrolledFocusEventID = focusEvent.eventID
+            return
+        }
+        
+        // For timed events, find layout and scroll to it
+        guard let layout = layoutInfo(for: targetSegment, focusEvent: focusEvent) else {
             return
         }
         
@@ -342,15 +524,22 @@ struct NDayScheduleView: View {
         }
     }
 
-    private func eventsForDay(_ events: [DisplayEvent], day: Date) -> [DisplayEvent] {
-        return events.filter { event in
-            // Filter out hidden events
-            guard !event.isHidden else { return false }
-            guard let startDate = event.event.start?.dateTime else { return false }
-            return calendar.isDate(startDate, inSameDayAs: day)
-        }
-    }
 
+    private func getTimezoneAbbreviation(from ianaName: String?) -> String {
+        let timezone: TimeZone
+        if let ianaName = ianaName, let tz = TimeZone(identifier: ianaName) {
+            timezone = tz
+        } else {
+            timezone = TimeZone.autoupdatingCurrent
+        }
+        
+        if let abbreviation = timezone.abbreviation() {
+            // Remove offset (e.g., "EST-5" -> "EST")
+            return String(abbreviation.prefix(3))
+        }
+        return "UTC"
+    }
+    
     static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale.autoupdatingCurrent
@@ -365,9 +554,121 @@ struct NDayScheduleView: View {
         formatter.dateStyle = .none
         return formatter
     }()
+    
+    // MARK: - All-Day Event Row Packing
+    
+    fileprivate func getDayIndices(for segment: EventSegmentCard, dates: [Date]) -> [Int] {
+        if segment.isSpanning {
+            // For spanning events, find all overlapping day indices
+            guard let startDateString = segment.event.event.start?.date else {
+                return []
+            }
+            
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateFormat = "yyyy-MM-dd"
+            dateFormatter.timeZone = calendar.timeZone
+            
+            guard let eventStartDate = dateFormatter.date(from: startDateString) else {
+                return []
+            }
+            
+            let eventStartOfDay = calendar.startOfDay(for: eventStartDate)
+            
+            let eventEndDate: Date
+            if let endDateString = segment.event.event.end?.date,
+               let parsedEndDate = dateFormatter.date(from: endDateString) {
+                eventEndDate = calendar.startOfDay(for: parsedEndDate)
+            } else {
+                eventEndDate = calendar.date(byAdding: .day, value: 1, to: eventStartOfDay) ?? eventStartOfDay
+            }
+            
+            var dayIndices: [Int] = []
+            for (index, day) in dates.enumerated() {
+                let startOfDay = calendar.startOfDay(for: day)
+                guard let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay) else {
+                    continue
+                }
+                if eventStartOfDay < endOfDay && eventEndDate > startOfDay {
+                    dayIndices.append(index)
+                }
+            }
+            return dayIndices
+        } else {
+            // For non-spanning events, return single day index
+            if let dayIndex = dates.firstIndex(where: { calendar.isDate($0, inSameDayAs: segment.day) }) {
+                return [dayIndex]
+            }
+            return []
+        }
+    }
+    
+    fileprivate func packAllDayEventsIntoRows(_ segments: [EventSegmentCard], dates: [Date]) -> [AllDayEventRow] {
+        var rows: [AllDayEventRow] = []
+        var rowOccupiedDays: [[Int]] = [] // Track which day indices each row occupies
+        
+        // Separate spanning and non-spanning
+        let spanning = segments.filter { $0.isSpanning }
+        let nonSpanning = segments.filter { !$0.isSpanning }
+        
+        // Step 1: Place spanning events (each on its own row)
+        for (index, segment) in spanning.enumerated() {
+            let dayIndices = getDayIndices(for: segment, dates: dates)
+            rows.append(AllDayEventRow(segments: [segment], rowIndex: index))
+            rowOccupiedDays.append(dayIndices)
+        }
+        
+        // Step 2: Pack non-spanning events
+        for segment in nonSpanning {
+            let dayIndices = getDayIndices(for: segment, dates: dates)
+            
+            // Find first row where this event doesn't overlap
+            var placed = false
+            for (rowIndex, occupiedDays) in rowOccupiedDays.enumerated() {
+                if !dayIndices.overlaps(with: occupiedDays) {
+                    // Add to existing row
+                    rows[rowIndex].segments.append(segment)
+                    rowOccupiedDays[rowIndex].append(contentsOf: dayIndices)
+                    placed = true
+                    break
+                }
+            }
+            
+            if !placed {
+                // Create new row
+                let newRowIndex = rows.count
+                rows.append(AllDayEventRow(segments: [segment], rowIndex: newRowIndex))
+                rowOccupiedDays.append(dayIndices)
+            }
+        }
+        
+        return rows
+    }
+}
+
+extension Array where Element == Int {
+    func overlaps(with other: [Int]) -> Bool {
+        return !Set(self).isDisjoint(with: Set(other))
+    }
 }
 
 private extension NDayScheduleView {
+    struct EventSegmentCard: Identifiable {
+        let id: String  // Unique per segment: "\(event.id)-\(dayIndex)" for tracking
+        let event: DisplayEvent  // Original event
+        let eventID: String  // event.id - shared across all segments of same event
+        let day: Date  // The day this segment represents
+        let startTime: Date?  // Segment start (clamped to day boundaries)
+        let endTime: Date?  // Segment end (clamped to day boundaries)
+        let isAllDay: Bool  // Whether this is an all-day segment
+        let isSpanning: Bool  // Whether this all-day event spans multiple columns
+        let spanDays: Int?  // Number of days spanned (for all-day only)
+    }
+    
+    struct AllDayEventRow {
+        var segments: [EventSegmentCard]
+        let rowIndex: Int
+    }
+    
     struct EventLayout {
         let startHour: Double
         let endHour: Double
@@ -377,19 +678,144 @@ private extension NDayScheduleView {
         let shouldShowTimeRange: Bool
         let style: ScheduleEventCard.Style
     }
+    
+    // MARK: - Segment Card Generation
+    
+    func generateSegmentCards(from events: [DisplayEvent], dates: [Date]) -> [EventSegmentCard] {
+        var segments: [EventSegmentCard] = []
+        
+        for event in events where !event.isHidden {
+            if event.event.isAllDay {
+                // All-day: single segment card
+                if let segment = createAllDaySegmentCard(event, dates: dates) {
+                    segments.append(segment)
+                }
+            } else {
+                // Timed: split into day segments
+                segments.append(contentsOf: splitTimedEventToSegments(event, dates: dates))
+            }
+        }
+        
+        return segments
+    }
+    
+    func splitTimedEventToSegments(_ event: DisplayEvent, dates: [Date]) -> [EventSegmentCard] {
+        guard let startDateTime = event.event.start?.dateTime,
+              let endDateTime = event.event.end?.dateTime else {
+            return []
+        }
+        
+        var segments: [EventSegmentCard] = []
+        
+        for (index, day) in dates.enumerated() {
+            let startOfDay = calendar.startOfDay(for: day)
+            guard let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay) else {
+                continue
+            }
+            
+            // Check if event overlaps this day
+            if startDateTime < endOfDay && endDateTime > startOfDay {
+                // Calculate clamped start/end times for this day
+                let segmentStartTime = max(startDateTime, startOfDay)
+                let segmentEndTime = min(endDateTime, endOfDay)
+                
+                let segmentID = "\(event.id)-\(index)"
+                let segment = EventSegmentCard(
+                    id: segmentID,
+                    event: event,
+                    eventID: event.id,
+                    day: day,
+                    startTime: segmentStartTime,
+                    endTime: segmentEndTime,
+                    isAllDay: false,
+                    isSpanning: false,
+                    spanDays: nil
+                )
+                segments.append(segment)
+            }
+        }
+        
+        return segments
+    }
+    
+    func createAllDaySegmentCard(_ event: DisplayEvent, dates: [Date]) -> EventSegmentCard? {
+        guard event.event.isAllDay else {
+            return nil
+        }
+        
+        guard let startDateString = event.event.start?.date else {
+            return nil
+        }
+        
+        // Parse date string (format: "YYYY-MM-DD")
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        dateFormatter.timeZone = calendar.timeZone
+        
+        guard let eventStartDate = dateFormatter.date(from: startDateString) else {
+            return nil
+        }
+        
+        // All-day events start at the beginning of the start date
+        let eventStartOfDay = calendar.startOfDay(for: eventStartDate)
+        
+        // Calculate end date (exclusive - all-day event ends at start of next day)
+        let eventEndDate: Date
+        if let endDateString = event.event.end?.date,
+           let parsedEndDate = dateFormatter.date(from: endDateString) {
+            // End date is exclusive, so use it as-is (it represents the start of the day after the event ends)
+            eventEndDate = calendar.startOfDay(for: parsedEndDate)
+        } else {
+            // If no end date, event spans just one day
+            eventEndDate = calendar.date(byAdding: .day, value: 1, to: eventStartOfDay) ?? eventStartOfDay
+        }
+        
+        // Find overlapping days
+        let overlappingDays = dates.filter { day in
+            let startOfDay = calendar.startOfDay(for: day)
+            guard let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay) else {
+                return false
+            }
+            // Check if event overlaps this day (event starts before day ends, event ends after day starts)
+            return eventStartOfDay < endOfDay && eventEndDate > startOfDay
+        }
+        
+        guard let firstOverlappingDay = overlappingDays.first else {
+            return nil
+        }
+        
+        // Check if spanning multiple days
+        let isSpanning = overlappingDays.count > 1
+        let spanDays = isSpanning ? overlappingDays.count : nil
+        
+        // For all-day events, use the first overlapping day
+        // startTime and endTime are nil for all-day events
+        let segmentID = "\(event.id)-allday"
+        return EventSegmentCard(
+            id: segmentID,
+            event: event,
+            eventID: event.id,
+            day: firstOverlappingDay,
+            startTime: nil,
+            endTime: nil,
+            isAllDay: true,
+            isSpanning: isSpanning,
+            spanDays: spanDays
+        )
+    }
 
-    func layoutInfo(for displayEvent: DisplayEvent, day: Date, focusEvent: ScheduleFocusEvent?) -> EventLayout? {
-        let event = displayEvent.event
-        guard
-            let startDate = event.start?.dateTime,
-            let endDate = event.end?.dateTime
-        else { return nil }
-
-        guard calendar.isDate(startDate, inSameDayAs: day) else { return nil }
-
-        let startOfDay = calendar.startOfDay(for: day)
-        let startComponents = calendar.dateComponents([.minute, .second], from: startOfDay, to: startDate)
-        let endComponents = calendar.dateComponents([.minute, .second], from: startOfDay, to: endDate)
+    func layoutInfo(for segment: EventSegmentCard, focusEvent: ScheduleFocusEvent?) -> EventLayout? {
+        // All-day events are handled separately, not in timeline
+        guard !segment.isAllDay else { return nil }
+        
+        guard let startTime = segment.startTime,
+              let endTime = segment.endTime else {
+            return nil
+        }
+        
+        let startOfDay = calendar.startOfDay(for: segment.day)
+        let startComponents = calendar.dateComponents([.minute, .second], from: startOfDay, to: startTime)
+        let endComponents = calendar.dateComponents([.minute, .second], from: startOfDay, to: endTime)
 
         guard
             let startMinutes = startComponents.minute,
@@ -406,22 +832,23 @@ private extension NDayScheduleView {
         guard duration > 0 else { return nil }
 
         let timeRange: String
-        if let start = event.start?.dateTime, let end = event.end?.dateTime {
-            let formattedStart = Self.timeRangeFormatter.string(from: start)
-            let formattedEnd = Self.timeRangeFormatter.string(from: end)
+        if let originalStart = segment.event.event.start?.dateTime,
+           let originalEnd = segment.event.event.end?.dateTime {
+            let formattedStart = Self.timeRangeFormatter.string(from: originalStart)
+            let formattedEnd = Self.timeRangeFormatter.string(from: originalEnd)
             timeRange = "\(formattedStart) – \(formattedEnd)"
         } else {
             timeRange = ""
         }
 
-        let title = event.title?.isEmpty == false ? event.title! : "Untitled Event"
+        let title = segment.event.event.title?.isEmpty == false ? segment.event.event.title! : "Untitled Event"
         let shouldShowTimeRange = duration >= 1.0
 
         let style: ScheduleEventCard.Style
-        if let focusEvent, focusEvent.eventID == displayEvent.id {
+        if let focusEvent, focusEvent.eventID == segment.eventID {
             style = cardStyle(for: focusEvent.style)
         } else {
-            style = cardStyle(for: displayEvent.style)
+            style = cardStyle(for: segment.event.style)
         }
 
         return EventLayout(

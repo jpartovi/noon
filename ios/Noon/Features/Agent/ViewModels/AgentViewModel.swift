@@ -25,6 +25,7 @@ final class AgentViewModel: ObservableObject {
     @Published private(set) var isLoadingSchedule: Bool = false
     @Published private(set) var hasLoadedSchedule: Bool = false
     @Published private(set) var focusEvent: ScheduleFocusEvent?
+    @Published private(set) var userTimezone: String?
     @Published var agentAction: AgentAction?
     @Published var isConfirmingAction: Bool = false
     @Published var transcriptionText: String?
@@ -113,6 +114,17 @@ final class AgentViewModel: ObservableObject {
 
     func configure(authProvider: AuthSessionProviding) {
         self.authProvider = authProvider
+        // Fetch user timezone when configuring
+        Task {
+            await fetchUserTimezone()
+        }
+    }
+    
+    func fetchUserTimezone() async {
+        let timezone = await AuthTokenProvider.shared.fetchUserTimezone()
+        await MainActor.run {
+            self.userTimezone = timezone
+        }
     }
     
     func cleanupAudioSession() {

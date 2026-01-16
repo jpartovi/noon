@@ -111,4 +111,32 @@ final class AuthTokenProvider {
             return false
         }
     }
+    
+    /// Fetches the current user's timezone from Supabase users table
+    /// Returns IANA timezone string (e.g., "America/New_York") or nil if not set/error
+    func fetchUserTimezone() async -> String? {
+        do {
+            let session = try await supabaseClient.auth.session
+            let userId = session.user.id
+            
+            struct UserTimezoneResponse: Codable {
+                let timezone: String?
+            }
+            
+            let response: [UserTimezoneResponse] = try await supabaseClient
+                .from("users")
+                .select("timezone")
+                .eq("id", value: userId.uuidString)
+                .execute()
+                .value
+            
+            if let timezone = response.first?.timezone, !timezone.isEmpty {
+                return timezone
+            }
+            return nil
+        } catch {
+            tokenLogger.error("Failed to fetch user timezone: \(error.localizedDescription)")
+            return nil
+        }
+    }
 }
