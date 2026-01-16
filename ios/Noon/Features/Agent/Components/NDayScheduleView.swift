@@ -7,6 +7,7 @@
 
 import SwiftUI
 import UIKit
+import Foundation
 
 struct NDayScheduleView: View {
     let startDate: Date
@@ -26,7 +27,7 @@ struct NDayScheduleView: View {
     @State private var lastScrolledFocusEventID: String?
 
     private let calendar = Calendar.autoupdatingCurrent
-
+    
     init(
         startDate: Date,
         numberOfDays: Int = 3,
@@ -336,15 +337,6 @@ struct NDayScheduleView: View {
                 }
             }
 
-            // Add invisible scroll anchors at regular intervals (every 15 minutes)
-            ForEach(0..<(24 * 4), id: \.self) { index in
-                let hourFraction = Double(index) / 4.0
-                let yPosition = timelineTopInset + hourHeight * CGFloat(hourFraction)
-                Color.clear
-                    .frame(width: 1, height: 1)
-                    .position(x: gridLeading + totalEventWidth / 2, y: yPosition)
-                    .id("hour-\(hourFraction)")
-            }
             
             // Render timed segment cards for each day column
             let timedSegments = segmentCards.filter { !$0.isAllDay }
@@ -378,8 +370,50 @@ struct NDayScheduleView: View {
         let paddingHeight = modalBottomPadding
         let totalContentHeight = gridHeight + paddingHeight
         
+        // Create anchors as direct children of VStack using spacers positioned at correct Y offsets
+        // This ensures anchors are findable by scrollTo while being at correct absolute positions
+        let anchorsVStack = VStack(spacing: 0) {
+            // Special anchor at the very top of the scrollable view (Y=0, above padding)
+            Color.clear
+                .frame(width: 1, height: 1)
+                .id("scroll-top")
+            
+            ForEach(0..<(24 * 4), id: \.self) { index in
+                let hourFraction = Double(index) / 4.0
+                let yPosition = timelineTopInset + hourHeight * CGFloat(hourFraction)
+                // Normalize anchor ID format to match scrollToTimeDiscrete
+                let anchorID = String(format: "hour-%.2f", hourFraction)
+                
+                // Calculate spacing from previous anchor (or from top for first anchor)
+                if index == 0 {
+                    // First anchor: add spacer to position at yPosition from top
+                    Spacer()
+                        .frame(height: yPosition)
+                    Color.clear
+                        .frame(width: 1, height: 1)
+                        .id(anchorID)
+                } else {
+                    // Subsequent anchors: spacing is 15 minutes = hourHeight/4
+                    Color.clear
+                        .frame(width: 1, height: hourHeight / 4.0)
+                        .id(anchorID)
+                }
+            }
+            // Fill remaining space to reach gridHeight
+            Spacer()
+                .frame(height: gridHeight - (timelineTopInset + hourHeight * 24))
+        }
+        .frame(width: contentWidth, height: gridHeight, alignment: .topLeading)
+        .allowsHitTesting(false)
+        
         let content = VStack(spacing: 0) {
+            // Use ZStack to layer scheduleContent and anchors
+            ZStack(alignment: .topLeading) {
             scheduleContent
+                    .frame(width: contentWidth, height: gridHeight, alignment: .topLeading)
+                
+                anchorsVStack
+            }
                 .frame(width: contentWidth, height: gridHeight, alignment: .topLeading)
             
             // Dynamic padding for microphone button and modal visibility
@@ -387,11 +421,19 @@ struct NDayScheduleView: View {
                 Color.clear
                     .frame(width: contentWidth, height: paddingHeight)
             }
+            
+            // Special anchor at the very bottom of the scrollable view (at end of total content)
+            Color.clear
+                .frame(width: 1, height: 1)
+                .id("scroll-bottom")
         }
         .frame(width: contentWidth, height: totalContentHeight, alignment: .topLeading)
         .clipped()
 
-        ScrollViewReader { proxy in
+        GeometryReader { geometry in
+            let viewportHeight = geometry.size.height
+            
+            ScrollViewReader { proxy in
             if #available(iOS 17.0, *) {
                 ScrollView(.vertical, showsIndicators: false) {
                     content
@@ -400,24 +442,32 @@ struct NDayScheduleView: View {
                 .clipped()
                 .onAppear {
                     scrollViewProxy = proxy
+                        // Delay scroll until layout is ready - use Task to wait for next frame
+                        Task { @MainActor in
+                            try? await Task.sleep(nanoseconds: 50_000_000) // 0.05 seconds
                     scrollToFocusEventIfNeeded(
                         proxy: proxy,
-                        segmentCards: segmentCards,
-                        dates: dates,
                         gridHeight: gridHeight,
                         timelineTopInset: timelineTopInset,
-                        hourHeight: hourHeight
+                                hourHeight: hourHeight,
+                                viewportHeight: viewportHeight,
+                                modalBottomPadding: modalBottomPadding
                     )
+                        }
                 }
                 .onChange(of: focusEvent?.eventID) {
+                        // Delay scroll until layout is ready - use Task to wait for next frame
+                        Task { @MainActor in
+                            try? await Task.sleep(nanoseconds: 50_000_000) // 0.05 seconds
                     scrollToFocusEventIfNeeded(
                         proxy: proxy,
-                        segmentCards: segmentCards,
-                        dates: dates,
                         gridHeight: gridHeight,
                         timelineTopInset: timelineTopInset,
-                        hourHeight: hourHeight
+                                hourHeight: hourHeight,
+                                viewportHeight: viewportHeight,
+                                modalBottomPadding: modalBottomPadding
                     )
+                        }
                 }
             } else {
                 ScrollView(.vertical, showsIndicators: false) {
@@ -426,24 +476,33 @@ struct NDayScheduleView: View {
                 .clipped()
                 .onAppear {
                     scrollViewProxy = proxy
+                        // Delay scroll until layout is ready - use Task to wait for next frame
+                        Task { @MainActor in
+                            try? await Task.sleep(nanoseconds: 50_000_000) // 0.05 seconds
                     scrollToFocusEventIfNeeded(
                         proxy: proxy,
-                        segmentCards: segmentCards,
-                        dates: dates,
                         gridHeight: gridHeight,
                         timelineTopInset: timelineTopInset,
-                        hourHeight: hourHeight
+                                hourHeight: hourHeight,
+                                viewportHeight: viewportHeight,
+                                modalBottomPadding: modalBottomPadding
                     )
+                        }
                 }
                 .onChange(of: focusEvent?.eventID) {
+                        // Delay scroll until layout is ready - use Task to wait for next frame
+                        Task { @MainActor in
+                            try? await Task.sleep(nanoseconds: 50_000_000) // 0.05 seconds
                     scrollToFocusEventIfNeeded(
                         proxy: proxy,
-                        segmentCards: segmentCards,
-                        dates: dates,
                         gridHeight: gridHeight,
                         timelineTopInset: timelineTopInset,
-                        hourHeight: hourHeight
+                                hourHeight: hourHeight,
+                                viewportHeight: viewportHeight,
+                                modalBottomPadding: modalBottomPadding
                     )
+                        }
+                    }
                 }
             }
         }
@@ -478,11 +537,11 @@ struct NDayScheduleView: View {
     
     private func scrollToFocusEventIfNeeded(
         proxy: ScrollViewProxy,
-        segmentCards: [EventSegmentCard],
-        dates: [Date],
         gridHeight: CGFloat,
         timelineTopInset: CGFloat,
-        hourHeight: CGFloat
+        hourHeight: CGFloat,
+        viewportHeight: CGFloat,
+        modalBottomPadding: CGFloat
     ) {
         guard let focusEvent else {
             lastScrolledFocusEventID = nil
@@ -494,30 +553,43 @@ struct NDayScheduleView: View {
             return
         }
         
-        // Find first visible segment card with matching eventID
-        guard let targetSegment = segmentCards.first(where: { $0.eventID == focusEvent.eventID }) else {
+        // Find the event directly in the events array
+        guard let displayEvent = events.first(where: { $0.id == focusEvent.eventID }) else {
             return
         }
         
         // For all-day events, scroll to top (all-day section is already visible at top)
-        if targetSegment.isAllDay {
+        if displayEvent.event.isAllDay {
             // All-day events are already visible at the top, no scrolling needed
             lastScrolledFocusEventID = focusEvent.eventID
             return
         }
         
-        // For timed events, find layout and scroll to it
-        guard let layout = layoutInfo(for: targetSegment, focusEvent: focusEvent) else {
+        // Use original event start time directly
+        guard let eventStartTime = displayEvent.event.start?.dateTime else {
             return
         }
         
-        let eventStartHour = layout.startHour
+        // Calculate which day this event starts on (relative to startDate)
+        let eventStartOfDay = calendar.startOfDay(for: eventStartTime)
+        let viewStartOfDay = calendar.startOfDay(for: startDate)
+        
+        // Use the start of the visible range if event starts before it
+        let startOfDay = max(eventStartOfDay, viewStartOfDay)
+        
+        // Calculate hour offset within the day
+        let startComponents = calendar.dateComponents([.minute, .second], from: startOfDay, to: eventStartTime)
+        guard let startMinutes = startComponents.minute else { return }
+        let startSeconds = Double(startComponents.second ?? 0)
+        let eventStartHour = (Double(startMinutes) + startSeconds / 60) / 60
         
         // Scroll to position the event's start time at 1/3 from the top
-        scrollToTime(
+        scrollToTimeDiscrete(
             hour: eventStartHour,
             proxy: proxy,
+            viewportHeight: viewportHeight,
             gridHeight: gridHeight,
+            modalBottomPadding: modalBottomPadding,
             timelineTopInset: timelineTopInset,
             hourHeight: hourHeight
         )
@@ -525,20 +597,111 @@ struct NDayScheduleView: View {
         lastScrolledFocusEventID = focusEvent.eventID
     }
     
-    private func scrollToTime(
+    private func scrollToTimeDiscrete(
         hour: Double,
         proxy: ScrollViewProxy,
+        viewportHeight: CGFloat,
         gridHeight: CGFloat,
+        modalBottomPadding: CGFloat,
         timelineTopInset: CGFloat,
         hourHeight: CGFloat
     ) {
-        // Find the nearest anchor point (every 15 minutes = 0.25 hours)
-        let roundedHour = (hour * 4).rounded() / 4.0
-        let anchorID = "hour-\(roundedHour)"
+        // Round to nearest 15 minutes (discrete anchor interval)
+        let anchorInterval: Double = 0.25  // 15 minutes in hours
+        let roundedHour = (hour / anchorInterval).rounded() * anchorInterval
+        // Normalize anchor ID format to match anchor creation (must use "hour-%.2f" format)
+        let anchorID = String(format: "hour-%.2f", roundedHour)
         
-        // Scroll to the anchor with the top of the event at 1/3 from viewport top
+        // Calculate where this anchor appears in content space
+        let anchorY = timelineTopInset + hourHeight * CGFloat(roundedHour)
+        
+        // Target: position this time at 1/4 from viewport top
+        let targetY = viewportHeight / 6.0
+        let totalContentHeight = gridHeight + modalBottomPadding
+        
+        // Edge case: if event is too early to position at targetY, scroll to very top
+        // This ensures the very top of the view is visible (above padding)
+        if anchorY < targetY {
+            // Too close to top - scroll to top anchor to show very top of view
+            let topAnchorID = "scroll-top"
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 150_000_000) // 0.15 seconds
         withAnimation(.easeInOut(duration: 0.3)) {
-            proxy.scrollTo(anchorID, anchor: UnitPoint(x: 0.5, y: 1.0 / 3.0))
+                    proxy.scrollTo(topAnchorID, anchor: .top)
+                }
+            }
+            return
+        }
+        
+        // Edge case: if event is too late to position at targetY, scroll to very bottom
+        // This ensures the very bottom of the view is visible (including padding)
+        let maxScrollableOffset = max(0, totalContentHeight - viewportHeight)
+        if anchorY - targetY > maxScrollableOffset {
+            // Too close to bottom - scroll to bottom anchor to show very bottom of view
+            let bottomAnchorID = "scroll-bottom"
+            
+            // Use Task with delay to ensure anchors are ready
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 150_000_000) // 0.15 seconds
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    proxy.scrollTo(bottomAnchorID, anchor: .top)
+                }
+            }
+            return
+        }
+        
+        // For normal case - Calculate which anchor to scroll to achieve ~1/6 positioning
+        // We want the target anchor at Y=anchorY to appear at viewport Y=targetY (1/6 from top)
+        // If we scroll to an anchor at position Y=scrollAnchorY using .top:
+        //   - scrollAnchorY appears at viewport Y=0
+        //   - target anchor at Y=anchorY appears at viewport Y = (anchorY - scrollAnchorY)
+        // We want: anchorY - scrollAnchorY = targetY
+        // So: scrollAnchorY = anchorY - targetY
+        let desiredScrollAnchorY = anchorY - targetY
+        
+        // Find the anchor closest to this calculated Y position
+        // CRITICAL: Ensure desiredScrollAnchorY is valid - if it's too small, we'd scroll to top
+        guard desiredScrollAnchorY >= timelineTopInset else {
+            // Fallback: just use target anchor with .top (not ideal but better than scrolling to hour-0)
+            withAnimation(.easeInOut(duration: 0.3)) {
+                proxy.scrollTo(anchorID, anchor: .top)
+            }
+            return
+        }
+        
+        // Improved rounding: try both floor and ceiling, pick closest to 1/4 target
+        // This reduces imprecision from rounding to 15-minute intervals
+        let scrollAnchorHour = Double((desiredScrollAnchorY - timelineTopInset) / hourHeight)
+        let roundedDown = (scrollAnchorHour / anchorInterval).rounded(.down) * anchorInterval
+        let roundedUp = (scrollAnchorHour / anchorInterval).rounded(.up) * anchorInterval
+        
+        // Calculate which rounding gets closer to targetY (1/4)
+        let anchorYDown = timelineTopInset + hourHeight * CGFloat(roundedDown)
+        let anchorYUp = timelineTopInset + hourHeight * CGFloat(roundedUp)
+        let viewportYDown = anchorY - anchorYDown
+        let viewportYUp = anchorY - anchorYUp
+        let errorDown = abs(viewportYDown - targetY)
+        let errorUp = abs(viewportYUp - targetY)
+        
+        let scrollRoundedHour = errorDown < errorUp ? roundedDown : roundedUp
+        
+        // Ensure scrollRoundedHour is valid (non-negative, reasonable)
+        guard scrollRoundedHour >= 0 && scrollRoundedHour < 24 else {
+            withAnimation(.easeInOut(duration: 0.3)) {
+                proxy.scrollTo(anchorID, anchor: .top)
+            }
+            return
+        }
+        
+        // Format anchor ID to match exact format used in anchor creation (normalized format)
+        let scrollAnchorID = String(format: "hour-%.2f", scrollRoundedHour)
+        
+        // Try scrolling to anchor - increase delay to ensure anchors are fully rendered
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 150_000_000) // 0.15 seconds
+            withAnimation(.easeInOut(duration: 0.3)) {
+                proxy.scrollTo(scrollAnchorID, anchor: .top)
+            }
         }
     }
 
