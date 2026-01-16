@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 struct NDayScheduleView: View {
     let startDate: Date
@@ -21,7 +22,7 @@ struct NDayScheduleView: View {
 
     init(
         startDate: Date,
-        numberOfDays: Int = 2,
+        numberOfDays: Int = 3,
         events: [DisplayEvent],
         focusEvent: ScheduleFocusEvent? = nil
     ) {
@@ -33,11 +34,13 @@ struct NDayScheduleView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let totalEventWidth = geometry.size.width * (2.0 / 3.0)
-            let gridLeading = (geometry.size.width - totalEventWidth) / 2.0
-            let dayColumnWidth = totalEventWidth / CGFloat(numberOfDays)
+            let horizontalPadding: CGFloat = 0
+            let timeLabelAreaWidth = Self.calculateTimeLabelWidth()
             let labelSpacing: CGFloat = 12
-            let labelWidth = max(gridLeading - labelSpacing, 0)
+            let gridLeading = horizontalPadding + timeLabelAreaWidth + labelSpacing
+            let totalEventWidth = geometry.size.width - gridLeading - horizontalPadding
+            let dayColumnWidth = totalEventWidth / CGFloat(numberOfDays)
+            let labelWidth = timeLabelAreaWidth
             let hourHeight: CGFloat = 40
             let timelineTopInset: CGFloat = 6
             let gridHeight = timelineTopInset + hourHeight * CGFloat(hours.count)
@@ -65,7 +68,9 @@ struct NDayScheduleView: View {
                     timelineTopInset: timelineTopInset,
                     hourHeight: hourHeight,
                     labelWidth: labelWidth,
-                    labelSpacing: labelSpacing
+                    labelSpacing: labelSpacing,
+                    contentWidth: geometry.size.width,
+                    horizontalPadding: horizontalPadding
                 )
                 .padding(.bottom, scheduleBottomInset)
             }
@@ -116,7 +121,9 @@ struct NDayScheduleView: View {
         timelineTopInset: CGFloat,
         hourHeight: CGFloat,
         labelWidth: CGFloat,
-        labelSpacing: CGFloat
+        labelSpacing: CGFloat,
+        contentWidth: CGFloat,
+        horizontalPadding: CGFloat
     ) -> some View {
         let cornerRadius: CGFloat = 8
 
@@ -130,7 +137,7 @@ struct NDayScheduleView: View {
                     context.stroke(path, with: .color(lineColor), lineWidth: 1)
                 }
             }
-            .frame(width: totalEventWidth + gridLeading * 2, height: gridHeight)
+            .frame(width: contentWidth, height: gridHeight)
 
             Color.clear
                 .frame(width: totalEventWidth, height: gridHeight)
@@ -190,7 +197,7 @@ struct NDayScheduleView: View {
                 }
             }
         }
-        .frame(width: totalEventWidth + gridLeading * 2, height: gridHeight, alignment: .topLeading)
+        .frame(width: contentWidth, height: gridHeight, alignment: .topLeading)
         .clipped()
 
         ScrollViewReader { proxy in
@@ -250,16 +257,28 @@ struct NDayScheduleView: View {
     private func hourLabel(for hour: Int) -> String {
         switch hour {
         case 0:
-            return "12 AM"
+            return "12AM"
         case 1..<12:
-            return "\(hour) AM"
+            return "\(hour)AM"
         case 12:
-            return "12 PM"
+            return "12PM"
         case 13..<24:
-            return "\(hour - 12) PM"
+            return "\(hour - 12)PM"
         default:
-            return "12 AM"
+            return "12AM"
         }
+    }
+    
+    private static func calculateTimeLabelWidth() -> CGFloat {
+        // Calculate width needed for the longest time label
+        // Longest labels are "12AM", "12PM", "10AM", "10PM" (4 characters)
+        // Using .caption font size (typically 12pt) with medium weight
+        let font = UIFont.preferredFont(forTextStyle: .caption1)
+        let fontWithWeight = UIFont.systemFont(ofSize: font.pointSize, weight: .medium)
+        let longestLabel = "12PM"
+        let attributes: [NSAttributedString.Key: Any] = [.font: fontWithWeight]
+        let size = (longestLabel as NSString).size(withAttributes: attributes)
+        return ceil(size.width) + 2 // Add small padding
     }
     
     private func scrollToFocusEventIfNeeded(
@@ -331,7 +350,7 @@ struct NDayScheduleView: View {
     static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale.autoupdatingCurrent
-        formatter.setLocalizedDateFormatFromTemplate("E d")
+        formatter.dateFormat = "EEE M/d"
         return formatter
     }()
 

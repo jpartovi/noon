@@ -28,7 +28,7 @@ struct AgentView: View {
                     events: viewModel.displayEvents,
                     focusEvent: viewModel.focusEvent
                 )
-                .padding(.horizontal, 24)
+                .padding(.horizontal, 4)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }

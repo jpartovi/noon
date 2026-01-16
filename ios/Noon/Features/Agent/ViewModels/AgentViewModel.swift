@@ -69,7 +69,7 @@ final class AgentViewModel: ObservableObject {
     }
 
     // Configuration for n-day schedule
-    var numberOfDays: Int = 2
+    var numberOfDays: Int = 3
 
     private weak var authProvider: AuthSessionProviding?
     private let recorder: AgentAudioRecorder

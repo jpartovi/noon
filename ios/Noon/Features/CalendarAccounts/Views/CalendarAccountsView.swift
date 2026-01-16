@@ -123,35 +123,12 @@ private extension CalendarAccountsView {
 
     @ViewBuilder
     var content: some View {
-        if let message = viewModel.errorMessage {
-            errorState(message: message)
-        } else if !viewModel.accounts.isEmpty {
+        if !viewModel.accounts.isEmpty {
             accountsList
         }
 
         connectInlineButton
             .padding(.top, 4)
-    }
-    func errorState(message: String) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label("Unable to load calendars", systemImage: "exclamationmark.triangle.fill")
-                .foregroundStyle(ColorPalette.Semantic.warning)
-                .font(.headline)
-            Text(message)
-                .foregroundStyle(ColorPalette.Text.secondary)
-            Button("Retry") {
-                Task {
-                    await viewModel.loadCalendars(force: true)
-                }
-            }
-            .foregroundStyle(ColorPalette.Semantic.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 20)
-                .fill(ColorPalette.Surface.elevated.opacity(0.6))
-        )
     }
 
     var accountsList: some View {
