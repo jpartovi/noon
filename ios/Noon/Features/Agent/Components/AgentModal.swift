@@ -23,7 +23,7 @@ struct AgentModal: View {
     
     private let fixedHeight: CGFloat = 88
     private let cornerRadius: CGFloat = 22
-    private let horizontalPadding: CGFloat = 4 // Match schedule view horizontal padding
+    private let horizontalPadding: CGFloat = 24 // Match schedule view horizontal padding
     private let verticalPadding: CGFloat = 20
     private let buttonSize: CGFloat = 64
     private let buttonSpacing: CGFloat = 24

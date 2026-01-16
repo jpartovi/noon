@@ -10,7 +10,7 @@ import SwiftUI
 struct MicrophoneButtonContainer<Content: View>: View {
     let content: Content
     private let cornerRadius: CGFloat = 22
-    private let horizontalPadding: CGFloat = 4 // Match schedule view horizontal padding
+    private let horizontalPadding: CGFloat = 24 // Match schedule view horizontal padding
     private let verticalPadding: CGFloat = 12 // Top and bottom padding inside container
     private let buttonHeight: CGFloat = 72
     

@@ -57,7 +57,6 @@ struct NDayScheduleView: View {
             let timelineTopInset: CGFloat = 6
             let gridHeight = timelineTopInset + hourHeight * CGFloat(hours.count)
             let lineColor = ColorPalette.Surface.overlay.opacity(1)
-            let scheduleBottomInset: CGFloat = 12
 
             let dates = (0..<numberOfDays).compactMap { offset in
                 calendar.date(byAdding: .day, value: offset, to: startDate)
@@ -107,13 +106,12 @@ struct NDayScheduleView: View {
                     horizontalPadding: horizontalPadding,
                     focusEvent: focusEvent
                 )
-                .padding(.bottom, scheduleBottomInset)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .animation(.spring(response: 0.3, dampingFraction: 0.8), value: modalBottomPadding)
         }
         .padding(.top, 4)
-        .padding(.bottom, 12)
+        .ignoresSafeArea(edges: .bottom)
     }
 
     @ViewBuilder
@@ -374,7 +372,24 @@ struct NDayScheduleView: View {
             }
         }
         
-        let paddingHeight = modalBottomPadding
+        // Calculate padding to maintain consistent spacing between schedule bottom and overlay top
+        // The spacing should be the same whether it's just microphone or microphone + modal
+        // Heights: microphone container = 96, modal = 88
+        // Gap between modal and microphone: 8 (from AgentView VStack spacing)
+        // We want consistent spacing value between schedule and the topmost overlay element
+        // Increased to 60 to ensure content can scroll past overlay without being hidden
+        let spaceToMicrophoneTop: CGFloat = 146
+        let modalHeight: CGFloat = 88
+        let modalMicrophoneGap: CGFloat = 8 // spacing between modal and microphone in AgentView
+        
+        // Determine if modal is visible by checking if modalBottomPadding exceeds base microphone padding
+        let baseMicrophonePadding: CGFloat = 96 + 8 + 24 // from AgentView calculation
+        let isModalVisible = modalBottomPadding > baseMicrophonePadding
+        
+        // Calculate padding: overlay heights + consistent spacing
+        // When no modal: microphone + spacing
+        // When modal visible: modal + gap + microphone + spacing (spacing is between schedule and modal top)
+        let paddingHeight = spaceToMicrophoneTop + (isModalVisible ? (modalHeight + modalMicrophoneGap) : 0)
         let totalContentHeight = gridHeight + paddingHeight
         
         // Create anchors as direct children of VStack using spacers positioned at correct Y offsets
@@ -424,10 +439,9 @@ struct NDayScheduleView: View {
                 .frame(width: contentWidth, height: gridHeight, alignment: .topLeading)
             
             // Dynamic padding for microphone button and modal visibility
-            if paddingHeight > 0 {
-                Color.clear
-                    .frame(width: contentWidth, height: paddingHeight)
-            }
+            // Always add padding to allow content to scroll past overlay elements
+            Color.clear
+                .frame(width: contentWidth, height: paddingHeight)
             
             // Special anchor at the very bottom of the scrollable view (at end of total content)
             Color.clear
