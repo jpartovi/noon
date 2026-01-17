@@ -206,7 +206,6 @@ final class AgentViewModel: ObservableObject {
                 switch result.agentResponse {
                 case .noAction(let response):
                     setNoticeMessage(response.metadata.reason)
-                    print("Notice message set for no-action: \(response.metadata.reason)")
                 case .error(let error):
                     // Handle agent error - this is an agent mistake, not a user error
                     // Log full error details for debugging (verbose internal logging)
@@ -526,7 +525,6 @@ final class AgentViewModel: ObservableObject {
             try await handleCreateEvent(response: response, accessToken: accessToken)
         case .noAction(let response):
             setNoticeMessage(response.metadata.reason)
-            print("Setting notice message for no-action: \(response.metadata.reason)")
         case .error(let error):
             // Handle agent error - this is an agent mistake, not a user error
             // Log full error details for debugging (verbose internal logging)

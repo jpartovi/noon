@@ -165,6 +165,7 @@ class CalendarRepository:
                 - id (str): Google calendar ID
                 - summary (str): Calendar display name
                 - primary (bool): Whether this is the primary calendar
+                - accessRole (str): Google Calendar access role ("reader", "writer", "owner")
                 - backgroundColor (str | None): Hex color provided by Google (camelCase)
                 - foregroundColor (str | None): Hex color provided by Google (camelCase)
         """
@@ -203,6 +204,7 @@ class CalendarRepository:
                         "color": calendar.get("backgroundColor")
                         or calendar.get("foregroundColor"),
                         "is_primary": bool(calendar.get("primary", False)),
+                        "access_role": calendar.get("accessRole"),  # Google API uses camelCase "accessRole"
                     }
                 )
             )

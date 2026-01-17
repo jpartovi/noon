@@ -220,10 +220,17 @@ def read_event(event_id: str, calendar_id: str) -> Dict[str, Any]:
 @tool
 def list_calendars() -> List[Dict[str, Any]]:
     """
-    List all available calendars from ALL connected Google accounts.
+    List all available calendars from ALL connected Google accounts with write permissions.
+    
+    IMPORTANT: This tool returns ONLY calendars where you have write access (access_role: "writer" or "owner").
+    Use this tool to get valid calendar_ids for create/update/delete operations.
     
     Returns:
-        List of calendars with their details
+        List of calendars with their details, including:
+        - id: Calendar ID (use this for calendar_id in create/update/delete operations)
+        - name: Calendar name
+        - access_role: Permission level ("writer" or "owner" - both allow write operations)
+        - is_primary: Whether this is the user's primary calendar (prefer this if available)
     """
     try:
         auth = get_auth_context()

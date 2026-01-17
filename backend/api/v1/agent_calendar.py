@@ -89,7 +89,10 @@ async def list_calendars(
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """
-    List ALL calendars from ALL connected Google accounts.
+    List calendars from ALL connected Google accounts with write permissions.
+    
+    Only returns calendars where the user has "writer" or "owner" access role.
+    This prevents the agent from selecting read-only calendars for create/update/delete operations.
     
     Returns calendars in format expected by agent tools.
     """
@@ -101,9 +104,18 @@ async def list_calendars(
         # Get all calendars from repository (these are already synced from all accounts)
         user_calendars = repository.get_calendars(current_user.id)
         
-        # Format calendars for agent
+        # Filter to only include calendars with write permissions (writer or owner)
+        # This prevents the agent from selecting read-only calendars
+        writable_access_roles = {"writer", "owner"}
+        
+        # Format calendars for agent - only include writable calendars
         formatted_calendars = []
         for cal in user_calendars:
+            access_role = cal.get("access_role")
+            # Only include calendars with write permissions
+            if access_role not in writable_access_roles:
+                continue
+                
             formatted_calendars.append({
                 "id": cal.get("google_calendar_id"),
                 "name": cal.get("name"),
@@ -112,6 +124,7 @@ async def list_calendars(
                 "timezone": "UTC",  # Calendar timezone can vary
                 "color": cal.get("color"),
                 "is_primary": cal.get("is_primary", False),
+                "access_role": access_role,
             })
         
         return {"calendars": formatted_calendars}

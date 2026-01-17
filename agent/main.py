@@ -10,6 +10,7 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMe
 
 from agent.tools import ALL_TOOLS, INTERNAL_TOOLS, EXTERNAL_TOOLS, set_auth_context
 from agent.schemas.agent_response import ErrorResponse
+from agent.validation import validate_request
 
 logger = logging.getLogger(__name__)
 
@@ -162,6 +163,15 @@ The agent follows this pattern: User Query → (Optional Internal Tools) → Ext
 
 Internal tools gather information but do NOT terminate. External tools terminate the agent and show results to the user.
 
+CRITICAL: CALENDAR SELECTION FOR WRITE OPERATIONS:
+When creating, updating, or deleting events, you MUST follow these rules:
+1. ALWAYS call list_calendars() FIRST to get calendars with write permissions
+2. ONLY use calendar_id values from list_calendars() results for write operations
+3. NEVER use calendar_id values from event results (read_schedule, search_events, read_event) for write operations
+4. Event results may include calendar_ids from read-only calendars - these are NOT valid for write operations
+5. list_calendars() returns ONLY calendars with write access (access_role: "writer" or "owner")
+6. When selecting a calendar, prefer the user's primary calendar (is_primary: true) if available, otherwise use any calendar from list_calendars()
+
 DECISION FLOW PATTERNS:
 
 1. VIEW SCHEDULE
@@ -202,14 +212,25 @@ DECISION FLOW PATTERNS:
 
 3. CREATE EVENT
    Query intent: User wants to schedule/create a new event
-   Pattern: read_schedule(start_time, end_time) → request_create_event(event_details, calendar_id)
+   Pattern: list_calendars() → read_schedule(start_time, end_time) → request_create_event(event_details, calendar_id)
+   CRITICAL CALENDAR SELECTION RULES:
+   - You MUST call list_calendars() FIRST to get calendars with write permissions
+   - You MUST ONLY use calendar_id values from list_calendars() results for create/update/delete operations
+   - You MUST NOT use calendar_id values from event results (read_schedule, search_events, read_event) for write operations
+   - Event results may include calendar_ids from read-only calendars - these are NOT valid for write operations
+   - list_calendars() returns ONLY calendars with write access (access_role: "writer" or "owner")
+   - When selecting a calendar, prefer the user's primary calendar (is_primary: true) if available, otherwise use any calendar from list_calendars()
    Optional: If checking for conflicts with existing events, call search_events first
    CRITICAL: Only include description parameter if:
    - The user explicitly mentions wanting a description (e.g., "with a note about...", "with description...")
    - The description is necessary for clarity (e.g., meeting agenda, important context)
    - Do NOT add descriptions automatically or make them up - most events don't need descriptions
-   Example: "Can you schedule a haircut for me next week?" → read_schedule(Monday 12:00 AM, Friday 11:59 PM) → request_create_event(summary: "haircut", start_time: available_time, end_time: available_time + duration, calendar_id: selected_calendar_id) - NO description parameter
-   Example: "Schedule a team meeting next Tuesday with description 'Discuss Q1 goals'" → request_create_event(..., description: "Discuss Q1 goals")
+   VALIDATION: After calling request_create_event, the request is validated. If validation fails (e.g., calendar is read-only), you will receive a validation error message. In this case:
+   - Call list_calendars() to find calendars with write access
+   - Select a different calendar with write permissions (access_role should be "writer" or "owner")
+   - Retry request_create_event with the new calendar_id
+   Example: "Can you schedule a haircut for me next week?" → list_calendars() → read_schedule(Monday 12:00 AM, Friday 11:59 PM) → request_create_event(summary: "haircut", start_time: available_time, end_time: available_time + duration, calendar_id: selected_from_list_calendars) - NO description parameter
+   Example: "Schedule a team meeting next Tuesday with description 'Discuss Q1 goals'" → list_calendars() → request_create_event(..., description: "Discuss Q1 goals", calendar_id: selected_from_list_calendars)
 
 4. UPDATE EVENT
    Query intent: User wants to modify an existing event
@@ -220,12 +241,17 @@ DECISION FLOW PATTERNS:
    - The user explicitly mentions updating or adding a description
    - Do NOT add or modify descriptions automatically or make them up
    - Only update the fields the user explicitly mentions changing
+   VALIDATION: After calling request_update_event, the request is validated. If validation fails (e.g., calendar is read-only), you will receive a validation error message. In this case:
+   - Call list_calendars() to find calendars with write access
+   - Note: You cannot change the calendar_id for an existing event, but you can inform the user about the limitation
    Example: "Can you move my haircut to Thursday next week?" → search_events("haircut", Monday 12:00 AM, Friday 11:59 PM) → extract event_id and calendar_id from first result → read_schedule(Thursday 12:00 AM, Thursday 11:59 PM) → request_update_event(event_id, calendar_id, start_time: new_thursday_time, end_time: new_thursday_time + duration) - NO description parameter
 
 5. DELETE EVENT
    Query intent: User wants to remove/cancel an event
    Pattern: search_events(keywords, start_time, end_time) → EXTRACT event_id and calendar_id from results → request_delete_event(event_id, calendar_id)
    MANDATORY: After search_events returns results, you MUST extract the event_id and calendar_id from the first matching event, then immediately call request_delete_event with those values.
+   VALIDATION: After calling request_delete_event, the request is validated. If validation fails (e.g., calendar is read-only), you will receive a validation error message. In this case:
+   - You cannot delete events from read-only calendars - inform the user about this limitation
    Example: "Can you remove my haircut this weekend?" → search_events("haircut", Saturday 12:00 AM, Sunday 11:59 PM) → extract event_id and calendar_id from first result → request_delete_event(event_id, calendar_id)
 
 6. UNSUPPORTED REQUEST
@@ -247,8 +273,8 @@ EXAMPLE TRAJECTORIES:
    → request_delete_event(event_id: found_event_id, calendar_id: found_calendar_id)
 
 4. "Can you schedule a haircut for me next week?"
-   → read_schedule(start_time: Monday 12:00 AM, end_time: Friday 11:59 PM)
-   → request_create_event(summary: "haircut", start_time: available_time, end_time: available_time + duration, calendar_id: selected_calendar_id)
+   → list_calendars() → read_schedule(start_time: Monday 12:00 AM, end_time: Friday 11:59 PM)
+   → request_create_event(summary: "haircut", start_time: available_time, end_time: available_time + duration, calendar_id: selected_from_list_calendars)
 
 5. "Can you move my haircut to Thursday next week?"
    → search_events(keywords: "haircut", start_time: Monday 12:00 AM, end_time: Friday 11:59 PM)
@@ -300,6 +326,13 @@ EXTERNAL TOOLS (terminate agent and show results to user):
 - request_update_event(event_id, calendar_id, summary=None, start_time=None, end_time=None, description=None, location=None): Request to update event. Only include fields that need updating. Only include description if explicitly requested.
 - request_delete_event(event_id, calendar_id): Request to delete event
 - do_nothing(reason): Handle unsupported/unclear requests
+
+VALIDATION ERRORS:
+- If you receive a validation error after calling request_create_event, request_update_event, or request_delete_event:
+  - The error message will explain the issue (e.g., "Calendar is read-only")
+  - For create operations: Call list_calendars() to find a calendar with write access (access_role should be "writer" or "owner") and retry
+  - For update/delete operations: You cannot change the calendar for an existing event - inform the user about the limitation
+  - Always retry with the corrected information when validation errors occur
 
 FINAL REMINDERS:
 - ALWAYS end with an external tool call. Internal tools are for gathering information only.
@@ -460,13 +493,14 @@ def tool_execution_node(state: State) -> Dict[str, Any]:
         new_messages = messages + tool_messages
         
         if has_external_tool:
-            # External tool was called - terminate
+            # External tool was called - DON'T terminate yet, let validation_node decide
+            # Validation will run before termination
             return {
                 "messages": new_messages,
                 "tool_results": {
                     "external_tool_result": external_tool_result,
                 },
-                "terminated": True,
+                "terminated": False,  # Don't terminate yet - validation will decide
             }
         else:
             # Only internal tools - continue agent loop
@@ -481,6 +515,88 @@ def tool_execution_node(state: State) -> Dict[str, Any]:
         return {
             "success": False,
             "message": f"Tool execution error: {error_msg}",
+            "terminated": True,
+        }
+
+
+def validation_node(state: State) -> Dict[str, Any]:
+    """
+    Validate external tool results before termination.
+    
+    If validation fails, return error as ToolMessage to agent loop so it can retry.
+    If validation passes, proceed to format_response.
+    """
+    try:
+        tool_results = state.get("tool_results", {})
+        external_tool_result = tool_results.get("external_tool_result")
+        messages = state.get("messages", [])
+        auth = state.get("auth")
+        
+        logger.info("Validation node: checking external tool result")
+        
+        # If no external tool result, nothing to validate - proceed
+        if not external_tool_result:
+            logger.info("No external tool result to validate - proceeding")
+            return {
+                "terminated": True,
+            }
+        
+        # Extract request type from external tool result
+        result_type = external_tool_result.get("type")
+        logger.info(f"Validating request type: {result_type}")
+        
+        # Validate the request
+        validation_error = validate_request(external_tool_result, auth)
+        
+        if validation_error:
+            # Validation failed - return error to agent loop
+            logger.info(f"Validation failed: {validation_error}")
+            
+            # Convert validation error to ToolMessage
+            # We need to find the last AIMessage with tool_calls to attach this error
+            tool_message = None
+            for msg in reversed(messages):
+                if hasattr(msg, 'tool_calls') and msg.tool_calls:
+                    # Use the first tool_call_id from the last tool-calling message
+                    tool_call_id = msg.tool_calls[0].get("id", "") if isinstance(msg.tool_calls[0], dict) else getattr(msg.tool_calls[0], "id", "")
+                    if tool_call_id:
+                        tool_message = ToolMessage(
+                            content=validation_error,
+                            tool_call_id=tool_call_id,
+                        )
+                        break
+            
+            # If we couldn't find a tool_call_id, create a generic ToolMessage
+            if not tool_message:
+                tool_message = ToolMessage(
+                    content=validation_error,
+                    tool_call_id="validation-error",
+                )
+            
+            # Clear external_tool_result and set terminated to False to continue agent loop
+            new_messages = messages + [tool_message]
+            return {
+                "messages": new_messages,
+                "tool_results": {},  # Clear external_tool_result
+                "terminated": False,  # Continue agent loop
+            }
+        else:
+            # Validation passed - proceed to format_response
+            # Keep external_tool_result and terminated=True so format_response can use it
+            logger.info("Validation passed - proceeding to format_response")
+            return {
+                "tool_results": {
+                    "external_tool_result": external_tool_result,  # Preserve for format_response
+                },
+                "terminated": True,  # Proceed to format_response
+            }
+    
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Error in validation_node: {error_msg}", exc_info=True)
+        # On validation node error, fail safe - proceed to format_response
+        # (better to let the request through than block everything)
+        return {
             "terminated": True,
         }
 
@@ -543,34 +659,40 @@ def should_continue(state: State) -> str:
     
     logger.info(f"should_continue: terminated={terminated}, success={success}, tool_calls={len(tool_calls) if tool_calls else 0}, external_result={external_tool_result is not None}")
     
-    # Priority 1: If external tool result exists, format the response
-    if external_tool_result:
-        logger.info("Routing to format_response: external_tool_result exists")
+    # Priority 1: If external tool result exists and we haven't validated yet, go to validation
+    # Check if we're coming from tool_execution with an external_tool_result
+    if external_tool_result and not terminated:
+        logger.info("Routing to validation: external_tool_result exists, needs validation")
+        return "validation"
+    
+    # Priority 2: If external tool result exists after validation (terminated=True), format the response
+    if external_tool_result and terminated:
+        logger.info("Routing to format_response: external_tool_result validated and ready")
         return "format_response"
     
-    # Priority 2: If there's an error (success=False and terminated), go to format_response
+    # Priority 3: If there's an error (success=False and terminated), go to format_response
     if terminated and not success:
         logger.info("Routing to format_response: error state")
         return "format_response"
     
-    # Priority 3: If there are tool calls, execute them
+    # Priority 4: If there are tool calls, execute them
     if tool_calls:
         logger.info("Routing to tool_execution: tool calls exist")
         return "tool_execution"
     
-    # Priority 4: If terminated (but no error), format response
+    # Priority 5: If terminated (but no error), format response
     if terminated:
         logger.info("Routing to format_response: terminated")
         return "format_response"
     
-    # Priority 5: Check if we have ToolMessages from internal tools - if so, continue to agent
-    # This handles the case where internal tools returned results and we need to process them
+    # Priority 6: Check if we have ToolMessages from internal tools or validation errors - if so, continue to agent
+    # This handles the case where internal tools returned results or validation failed and we need to process them
     from langchain_core.messages import ToolMessage
     has_tool_messages = any(isinstance(msg, ToolMessage) for msg in messages)
     if has_tool_messages and not terminated:
-        # Check if the last message is a ToolMessage (indicating we just got results from an internal tool)
+        # Check if the last message is a ToolMessage (indicating we just got results from an internal tool or validation error)
         if messages and isinstance(messages[-1], ToolMessage):
-            logger.info("Routing to agent: ToolMessage from internal tool needs processing")
+            logger.info("Routing to agent: ToolMessage from internal tool or validation error needs processing")
             return "agent"
     
     # Default to format_response (shouldn't happen)
@@ -586,6 +708,7 @@ graph_builder = StateGraph(State, output_schema=OutputState)
 # Add nodes
 graph_builder.add_node("agent", agent_node)
 graph_builder.add_node("tool_execution", tool_execution_node)
+graph_builder.add_node("validation", validation_node)
 graph_builder.add_node("format_response", format_response_node)
 
 # Set entry point
@@ -605,8 +728,18 @@ graph_builder.add_conditional_edges(
     "tool_execution",
     should_continue,
     {
+        "validation": "validation",  # New validation step for external tools
         "agent": "agent",
         "format_response": "format_response",
+    },
+)
+
+graph_builder.add_conditional_edges(
+    "validation",
+    should_continue,
+    {
+        "agent": "agent",  # Validation failed, retry
+        "format_response": "format_response",  # Validation passed
     },
 )
 
