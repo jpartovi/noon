@@ -25,6 +25,7 @@ struct NDayScheduleView: View {
     private let minimumEventHeight: CGFloat = 8
     @State private var scrollViewProxy: ScrollViewProxy?
     @State private var lastScrolledFocusEventID: String?
+    @State private var hasScrolledToNoon: Bool = false
 
     private let calendar = Calendar.autoupdatingCurrent
     
@@ -565,9 +566,25 @@ struct NDayScheduleView: View {
         modalBottomPadding: CGFloat
     ) {
         guard let focusEvent else {
+            // No focus event - scroll to 12:00 pm if we haven't already
+            if !hasScrolledToNoon {
+                scrollToTimeDiscrete(
+                    hour: 12.0,
+                    proxy: proxy,
+                    viewportHeight: viewportHeight,
+                    gridHeight: gridHeight,
+                    modalBottomPadding: modalBottomPadding,
+                    timelineTopInset: timelineTopInset,
+                    hourHeight: hourHeight
+                )
+                hasScrolledToNoon = true
+            }
             lastScrolledFocusEventID = nil
             return
         }
+        
+        // Reset noon scroll flag when we have a focus event
+        hasScrolledToNoon = false
         
         // Avoid scrolling multiple times for the same event
         if lastScrolledFocusEventID == focusEvent.eventID {
