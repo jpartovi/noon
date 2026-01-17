@@ -240,7 +240,11 @@ final class AgentViewModel: ObservableObject {
                 }
 
                 if let responseString = result.responseString {
-                    print("Agent response (\(result.statusCode)): \(responseString)")
+                    let formattedResponse = formatAgentResponse(
+                        statusCode: result.statusCode,
+                        jsonString: responseString
+                    )
+                    print(formattedResponse)
                 }
             } catch {
                 // Errors during agent action flow should use agent error handler
@@ -283,6 +287,130 @@ final class AgentViewModel: ObservableObject {
         noticeDismissTask?.cancel()
         noticeDismissTask = nil
         noticeMessage = nil
+    }
+    
+    private func formatAgentResponse(statusCode: Int, jsonString: String) -> String {
+        guard let jsonData = jsonString.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
+            return "Agent response: [Failed to parse JSON]"
+        }
+        
+        var lines: [String] = []
+        
+        // Type
+        if let type = json["type"] as? String {
+            lines.append("Agent response: \(type)")
+        } else {
+            lines.append("Agent response: [unknown]")
+        }
+        
+        // Metadata
+        if let metadata = json["metadata"] as? [String: Any], !metadata.isEmpty {
+            formatMetadata(metadata, into: &lines)
+        }
+        
+        return lines.joined(separator: "\n")
+    }
+    
+    private func formatMetadata(_ metadata: [String: Any], into lines: inout [String]) {
+        for (key, value) in metadata.sorted(by: { $0.key < $1.key }) {
+            let formattedKey = formatKey(key)
+            let formattedValue = formatValue(value)
+            lines.append("  \(formattedKey): \(formattedValue)")
+        }
+    }
+    
+    private func formatKey(_ key: String) -> String {
+        // Convert snake_case to Title Case
+        return key.split(separator: "_")
+            .map { $0.capitalized }
+            .joined(separator: " ")
+    }
+    
+    private func formatValue(_ value: Any) -> String {
+        switch value {
+        case is NSNull:
+            return "null"
+        case let stringValue as String:
+            // Format ISO date strings nicely
+            if let date = parseISODate(stringValue) {
+                let formatter = DateFormatter()
+                formatter.dateStyle = .medium
+                formatter.timeStyle = .short
+                return formatter.string(from: date)
+            }
+            return stringValue
+        case let numberValue as NSNumber:
+            return "\(numberValue)"
+        case let boolValue as Bool:
+            return boolValue ? "true" : "false"
+        case let arrayValue as [Any]:
+            return "[\(arrayValue.count) item\(arrayValue.count == 1 ? "" : "s")]"
+        case let dictValue as [String: Any]:
+            // Handle nested dictionaries - especially for dateTime objects
+            if let dateTime = dictValue["dateTime"] as? String,
+               let date = parseISODate(dateTime) {
+                let formatter = DateFormatter()
+                formatter.dateStyle = .medium
+                formatter.timeStyle = .short
+                return formatter.string(from: date)
+            }
+            // For other nested dicts, show key-value pairs inline
+            let pairs = dictValue.map { (k, v) -> String in
+                let formattedV = formatValueInline(v)
+                return "\(k): \(formattedV)"
+            }
+            return pairs.isEmpty ? "{}" : "{ \(pairs.joined(separator: ", ")) }"
+        default:
+            return "\(value)"
+        }
+    }
+    
+    private func formatValueInline(_ value: Any) -> String {
+        switch value {
+        case is NSNull:
+            return "null"
+        case let stringValue as String:
+            if let date = parseISODate(stringValue) {
+                let formatter = DateFormatter()
+                formatter.dateStyle = .medium
+                formatter.timeStyle = .short
+                return formatter.string(from: date)
+            }
+            return stringValue
+        case let numberValue as NSNumber:
+            return "\(numberValue)"
+        case let boolValue as Bool:
+            return boolValue ? "true" : "false"
+        default:
+            return "\(value)"
+        }
+    }
+    
+    private func parseISODate(_ string: String) -> Date? {
+        // Try ISO8601DateFormatter first
+        let iso8601Formatter = ISO8601DateFormatter()
+        if let date = iso8601Formatter.date(from: string) {
+            return date
+        }
+        
+        // Try DateFormatter with common ISO formats
+        let dateFormats = [
+            "yyyy-MM-dd'T'HH:mm:ssZ",
+            "yyyy-MM-dd'T'HH:mm:ss.SSSZ",
+            "yyyy-MM-dd'T'HH:mm:ss",
+            "yyyy-MM-dd"
+        ]
+        
+        let dateFormatter = DateFormatter()
+        for format in dateFormats {
+            dateFormatter.dateFormat = format
+            if let date = dateFormatter.date(from: string) {
+                return date
+            }
+        }
+        
+        return nil
     }
 
     private func handle(error: Error) {
