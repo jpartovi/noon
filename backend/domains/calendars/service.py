@@ -64,6 +64,34 @@ class CalendarService:
     ) -> None:
         """Initialize calendar service with repository."""
         self.repository = repository or CalendarRepository()
+    
+    def _validate_calendar_id(self, calendar_id: str) -> None:
+        """
+        Validate calendar ID format.
+        
+        Google Calendar IDs must be in one of these formats:
+        - Email address: "user@example.com" (primary calendar)
+        - Special ID: "primary" 
+        - Full calendar ID: "id@group.calendar.google.com" or "id@import.calendar.google.com"
+        
+        Args:
+            calendar_id: Calendar ID to validate
+            
+        Raises:
+            GoogleCalendarUserError: If calendar ID format is invalid
+        """
+        # Allow "primary" as a special case
+        if calendar_id == "primary":
+            return
+        
+        # Must be email format or have a calendar suffix
+        if "@" not in calendar_id:
+            raise GoogleCalendarUserError(
+                f"Invalid calendar ID format: '{calendar_id}'. "
+                "Calendar IDs must be full Google Calendar IDs (e.g., 'id@group.calendar.google.com') "
+                "or email addresses for primary calendars. "
+                "Did you truncate the ID? Check the 'id' field from list_calendars() or event responses."
+            )
 
     async def events_for_date_range(
         self,
@@ -113,6 +141,8 @@ class CalendarService:
         contexts, calendars_by_id = await self._prepare_context(user_id)
 
         # Find the account context that has access to this calendar using Supabase data
+        # Validate calendar ID format first
+        self._validate_calendar_id(calendar_id)
         supabase_calendar = calendars_by_id.get(calendar_id)
         if not supabase_calendar:
             raise GoogleCalendarEventNotFoundError(
@@ -180,6 +210,8 @@ class CalendarService:
         contexts, calendars_by_id = await self._prepare_context(user_id)
 
         # Find the account context that has access to this calendar using Supabase data
+        # Validate calendar ID format first
+        self._validate_calendar_id(calendar_id)
         supabase_calendar = calendars_by_id.get(calendar_id)
         if not supabase_calendar:
             raise GoogleCalendarUserError(
@@ -271,6 +303,8 @@ class CalendarService:
         contexts, calendars_by_id = await self._prepare_context(user_id)
 
         # Find the account context that has access to this calendar using Supabase data
+        # Validate calendar ID format first
+        self._validate_calendar_id(calendar_id)
         supabase_calendar = calendars_by_id.get(calendar_id)
         if not supabase_calendar:
             raise GoogleCalendarUserError(
@@ -398,6 +432,8 @@ class CalendarService:
         contexts, calendars_by_id = await self._prepare_context(user_id)
 
         # Find the account context that has access to this calendar using Supabase data
+        # Validate calendar ID format first
+        self._validate_calendar_id(calendar_id)
         supabase_calendar = calendars_by_id.get(calendar_id)
         if not supabase_calendar:
             raise GoogleCalendarUserError(
