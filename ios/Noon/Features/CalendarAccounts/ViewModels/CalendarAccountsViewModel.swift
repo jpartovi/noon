@@ -190,7 +190,8 @@ final class CalendarAccountsViewModel: ObservableObject {
     }
 
     func isExpanded(_ account: GoogleAccount) -> Bool {
-        expandedAccountIDs.contains(account.id)
+        // Always return true since collapse functionality has been removed
+        true
     }
 
     func toggleCalendarVisibility(_ calendar: GoogleCalendar) async {
