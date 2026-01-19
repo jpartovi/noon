@@ -1,7 +1,7 @@
 [project]
 name = "agent"
 version = "0.1.0"
-description = "Add your description here"
+description = "Hello world LangGraph agent"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -10,7 +10,13 @@ dependencies = [
     "langgraph>=1.0.2",
     "langgraph-cli[inmem]>=0.4.7",
     "langsmith>=0.4.42",
+    "httpx>=0.27.2",
+    "pydantic>=2.7.0",
 ]
 
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [tool.setuptools]
-py-modules = ["main", "prompts", "__init__"]
+py-modules = ["main", "__init__"]

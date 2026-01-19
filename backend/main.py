@@ -2,22 +2,18 @@
 
 from __future__ import annotations
 
-import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from agent.routes import agent as agent_routes
-from auth.routes import auth as auth_routes
-from google_calendar.routes import google_accounts, google_calendar
+from api.v1.router import router as v1_router
+from core.logging import setup_logging, get_logger
+from core.middleware import RequestLoggingMiddleware
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
-logger = logging.getLogger(__name__)
+# Configure centralized logging
+setup_logging()
+logger = get_logger(__name__)
 
 
 @asynccontextmanager
@@ -45,16 +41,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers
-# Auth routes (no authentication required)
-app.include_router(auth_routes.router)
+# Add request logging middleware (must be after CORS to log authenticated requests)
+app.add_middleware(RequestLoggingMiddleware)
 
-# Google Calendar routes (authentication required via Depends(get_current_user))
-app.include_router(google_accounts.router)
-app.include_router(google_calendar.router)
-
-# Agent routes (authentication required via Depends(get_current_user))
-app.include_router(agent_routes.router)
+# Include API router
+app.include_router(v1_router, prefix="/api/v1")
 
 
 @app.get("/healthz")

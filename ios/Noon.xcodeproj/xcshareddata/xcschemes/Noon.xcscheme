@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Scheme
-   LastUpgradeVersion = "2600"
+   LastUpgradeVersion = "2620"
    version = "1.7">
    <BuildAction
       parallelizeBuildables = "YES"
@@ -52,13 +52,33 @@
       </BuildableProductRunnable>
       <EnvironmentVariables>
          <EnvironmentVariable
-            key = "NOON_BACKEND_URL"
-            value = "http://127.0.0.1:8000"
+            key = "BACKEND_URL"
+            value = "https://unesoteric-yi-doggedly.ngrok-free.dev"
             isEnabled = "YES">
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "GOOGLE_OAUTH_CALLBACK_URL"
             value = "noon://oauth/google"
+            isEnabled = "YES">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "SUPABASE_URL"
+            value = "https://ouuqqsntczwicaeqewun.supabase.co"
+            isEnabled = "YES">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "SUPABASE_ANON_KEY"
+            value = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im91dXFxc250Y3p3aWNhZXFld3VuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI2MjE0NDcsImV4cCI6MjA3ODE5NzQ0N30.8Cs7UWDcA5zW-PMCF3k3yyiVhj_wEn35R1E7HdTJ-ks"
+            isEnabled = "YES">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "OS_ACTIVITY_MODE"
+            value = "disable"
+            isEnabled = "YES">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "AGENT_BASE_URL"
+            value = "https://unesoteric-yi-doggedly.ngrok-free.dev"
             isEnabled = "YES">
          </EnvironmentVariable>
       </EnvironmentVariables>
