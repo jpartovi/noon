@@ -79,6 +79,20 @@ struct CalendarAccountsView: View {
         } message: {
             Text(viewModel.deletionError ?? "")
         }
+        .alert("Unable to update calendar", isPresented: Binding(
+            get: { viewModel.toggleError != nil },
+            set: { isPresented in
+                if isPresented == false {
+                    viewModel.clearToggleError()
+                }
+            }
+        )) {
+            Button("OK", role: .cancel) {
+                viewModel.clearToggleError()
+            }
+        } message: {
+            Text(viewModel.toggleError ?? "")
+        }
     }
 }
 
@@ -123,12 +137,18 @@ private extension CalendarAccountsView {
 
     @ViewBuilder
     var content: some View {
-        if !viewModel.accounts.isEmpty {
-            accountsList
-        }
+        if viewModel.isLoading {
+            ProgressView()
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 40)
+        } else {
+            if !viewModel.accounts.isEmpty {
+                accountsList
+            }
 
-        connectInlineButton
-            .padding(.top, 4)
+            connectInlineButton
+                .padding(.top, 4)
+        }
     }
 
     var accountsList: some View {
@@ -150,13 +170,6 @@ private extension CalendarAccountsView {
                     .truncationMode(.middle)
 
                 Spacer()
-                
-                // Chevron icon
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(ColorPalette.Text.secondary)
-                    .rotationEffect(.degrees(viewModel.isExpanded(account) ? 90 : 0))
-                    .animation(.easeInOut(duration: 0.2), value: viewModel.isExpanded(account))
 
                 if viewModel.isDeleting(account) {
                     ProgressView()
@@ -179,36 +192,29 @@ private extension CalendarAccountsView {
             }
             .padding(.vertical, 18)
             .padding(.horizontal, 20)
-            .contentShape(Rectangle())
-            .onTapGesture {
-                viewModel.toggleExpansion(for: account.id)
-            }
             
-            // Calendar list (shown when expanded)
-            if viewModel.isExpanded(account) {
-                let calendars = account.calendars ?? []
-                VStack(spacing: 0) {
-                    Divider()
-                        .padding(.horizontal, 20)
-                    
-                    if calendars.isEmpty {
-                        Text("No calendars")
-                            .font(.subheadline)
-                            .foregroundStyle(ColorPalette.Text.secondary)
-                            .padding(.vertical, 12)
-                            .padding(.horizontal, 20)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    } else {
-                        VStack(spacing: 12) {
-                            ForEach(calendars, id: \.id) { calendar in
-                                calendarRow(calendar)
-                            }
-                        }
+            // Calendar list (always shown)
+            let calendars = account.calendars ?? []
+            VStack(spacing: 0) {
+                Divider()
+                    .padding(.horizontal, 20)
+                
+                if calendars.isEmpty {
+                    Text("No calendars")
+                        .font(.subheadline)
+                        .foregroundStyle(ColorPalette.Text.secondary)
                         .padding(.vertical, 12)
                         .padding(.horizontal, 20)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    VStack(spacing: 8) {
+                        ForEach(calendars, id: \.id) { calendar in
+                            calendarRow(calendar)
+                        }
                     }
+                    .padding(.vertical, 12)
+                    .padding(.horizontal, 20)
                 }
-                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .background(
@@ -219,36 +225,47 @@ private extension CalendarAccountsView {
             RoundedRectangle(cornerRadius: 20)
                 .stroke(ColorPalette.Surface.overlay.opacity(0.4), lineWidth: 1)
         )
-        .animation(.easeInOut(duration: 0.2), value: viewModel.isExpanded(account))
     }
     
     func calendarRow(_ calendar: GoogleCalendar) -> some View {
-        HStack(spacing: 12) {
+        let isHidden = calendar.isHidden
+        let opacity = isHidden ? 0.5 : 1.0
+        
+        return HStack(spacing: 10) {
             // Color swatch for calendar
             Circle()
                 .fill(Color.fromHex(calendar.color))
-                .frame(width: 20, height: 20)
+                .frame(width: 14, height: 14)
+                .opacity(opacity)
             
             Text(calendar.name)
-                .font(.subheadline)
-                .foregroundStyle(ColorPalette.Text.primary)
+                .font(.caption)
+                .foregroundStyle(isHidden ? ColorPalette.Text.secondary : ColorPalette.Text.primary)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
             
-            if calendar.isPrimary {
-                Text("Primary")
-                    .font(.caption)
-                    .foregroundStyle(ColorPalette.Text.secondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(
-                        Capsule()
-                            .fill(ColorPalette.Surface.overlay.opacity(0.3))
-                    )
+            // Eye icon for visibility state
+            if viewModel.isToggling(calendar) {
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .tint(ColorPalette.Text.secondary)
+                    .scaleEffect(0.75, anchor: .center)
+            } else {
+                Button {
+                    Task {
+                        await viewModel.toggleCalendarVisibility(calendar)
+                    }
+                } label: {
+                    Image(systemName: isHidden ? "eye.slash" : "eye")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(ColorPalette.Text.secondary)
+                        .opacity(opacity)
+                }
+                .buttonStyle(.plain)
             }
         }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 12)
+        .padding(.vertical, 4)
+        .padding(.horizontal, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -312,6 +329,31 @@ private final class MockCalendarService: CalendarServicing {
 
     func deleteCalendar(accessToken: String, accountId: String) async throws {
         accounts.removeAll { $0.id == accountId }
+    }
+
+    func updateCalendar(accessToken: String, calendarId: String, isHidden: Bool) async throws -> GoogleCalendar {
+        // Mock implementation - find and update the calendar
+        for account in accounts {
+            if let calendars = account.calendars,
+               let calendarIndex = calendars.firstIndex(where: { $0.id == calendarId }) {
+                let calendar = calendars[calendarIndex]
+                // Return updated calendar with new isHidden value
+                return GoogleCalendar(
+                    id: calendar.id,
+                    googleCalendarId: calendar.googleCalendarId,
+                    name: calendar.name,
+                    description: calendar.description,
+                    color: calendar.color,
+                    isPrimary: calendar.isPrimary,
+                    isHidden: isHidden,
+                    googleAccountId: calendar.googleAccountId,
+                    createdAt: calendar.createdAt,
+                    updatedAt: Date()
+                )
+            }
+        }
+        // If calendar not found, throw an error
+        throw CalendarServiceError.http(404)
     }
 
     func createEvent(accessToken: String, request: CreateEventRequest) async throws -> CalendarCreateEventResponse {
