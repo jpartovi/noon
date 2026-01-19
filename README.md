@@ -4,6 +4,20 @@ Noon is a voice-powered calendar scheduling assistant that allows users to inter
 
 ## App Architecture
 
+```mermaid
+graph TB
+    User[User] -->|Voice Input| iOS[iOS App]
+    iOS -->|HTTP/REST<br/>Bearer Token| Backend[FastAPI Backend]
+    Backend -->|LangGraph SDK| Agent[LangGraph Agent]
+    Backend -->|Auth & Database| Supabase[Supabase]
+    Backend -->|Calendar API| Google[Google Calendar]
+    Agent -->|HTTP/REST<br/>Calendar Operations| Backend
+    Backend -->|Transcription| Deepgram[Deepgram]
+    Agent -->|LLM Calls| OpenAI[OpenAI]
+    Backend -->|JSON Response| iOS
+    iOS -->|Display Schedule| User
+```
+
 Noon consists of three main components:
 
 - **iOS App**: SwiftUI-based mobile application for user interaction
