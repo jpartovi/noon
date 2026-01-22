@@ -984,7 +984,9 @@ final class AgentViewModel: ObservableObject {
         )
         
         // Create a merged CalendarEvent by applying update metadata to original event
-        let timezone = TimeZone.autoupdatingCurrent.identifier
+        guard let timezone = userTimezone else {
+            throw NSError(domain: "AgentViewModel", code: 1, userInfo: [NSLocalizedDescriptionKey: "User timezone is not configured. Please set your timezone in your account settings."])
+        }
         
         // Determine updated start date/time using enum pattern matching
         let updatedStart: CalendarEvent.EventDateTime?
@@ -1175,7 +1177,9 @@ final class AgentViewModel: ObservableObject {
     // MARK: - Create Event Handling
     private func handleCreateEvent(response: CreateEventResponse, accessToken: String) async throws {
         let metadata = response.metadata
-        let timezone = TimeZone.autoupdatingCurrent.identifier
+        guard let timezone = userTimezone else {
+            throw NSError(domain: "AgentViewModel", code: 1, userInfo: [NSLocalizedDescriptionKey: "User timezone is not configured. Please set your timezone in your account settings."])
+        }
         
         // Determine event day and create EventDateTime objects using enum pattern matching
         let eventDay: Date
@@ -1355,7 +1359,15 @@ final class AgentViewModel: ObservableObject {
     
     private func confirmCreateEvent(response: CreateEventResponse, accessToken: String?, pendingAction: AgentAction) async {
         let metadata = response.metadata
-        let timezone = TimeZone.autoupdatingCurrent.identifier
+        guard let timezone = userTimezone else {
+            Task { @MainActor in
+                self.errorState = AgentError(
+                    message: "User timezone is not configured. Please set your timezone in your account settings.",
+                    context: "Creating event"
+                )
+            }
+            return
+        }
         
         Task { @MainActor in
             do {
@@ -1372,8 +1384,7 @@ final class AgentViewModel: ObservableObject {
                         end: BackendEventTime(timed: endDateTime, timeZone: timezone),
                         calendarId: metadata.calendar_id,
                         description: metadata.description,
-                        location: metadata.location,
-                        timezone: timezone
+                        location: metadata.location
                     )
                 case (.allDay(let startDateString), .allDay(let endDateString)):
                     // All-day event
@@ -1383,8 +1394,7 @@ final class AgentViewModel: ObservableObject {
                         end: BackendEventTime(allDay: endDateString),
                         calendarId: metadata.calendar_id,
                         description: metadata.description,
-                        location: metadata.location,
-                        timezone: timezone
+                        location: metadata.location
                     )
                 default:
                     throw NSError(domain: "AgentViewModel", code: 1, userInfo: [NSLocalizedDescriptionKey: "Start and end must both be timed or both be all-day events"])
@@ -1474,7 +1484,13 @@ final class AgentViewModel: ObservableObject {
                 var token = try await resolveAccessToken(initial: accessToken)
 
                 // Build update request from metadata using enum pattern matching
-                let timezone = TimeZone.autoupdatingCurrent.identifier
+                guard let timezone = userTimezone else {
+                    self.errorState = AgentError(
+                        message: "User timezone is not configured. Please set your timezone in your account settings.",
+                        context: "Updating event"
+                    )
+                    return
+                }
                 
                 // Convert DateTimeDict to BackendEventTime
                 let startBackendTime: BackendEventTime?
@@ -1507,8 +1523,7 @@ final class AgentViewModel: ObservableObject {
                     end: endBackendTime,
                     calendarId: calendarID,
                     description: metadata.description,
-                    location: metadata.location,
-                    timezone: timezone
+                    location: metadata.location
                 )
 
                 // Call calendar service to apply the update

@@ -32,7 +32,17 @@ struct NDayScheduleView: View {
     @State private var lastScrolledFocusEventID: String?
     @State private var hasScrolledToNoon: Bool = false
 
-    private let calendar = Calendar.autoupdatingCurrent
+    private var calendar: Calendar {
+        // Use user's timezone from database, fallback to system timezone only if not available
+        if let userTimezone = userTimezone, let timeZone = TimeZone(identifier: userTimezone) {
+            var cal = Calendar(identifier: .gregorian)
+            cal.timeZone = timeZone
+            return cal
+        } else {
+            // Fallback to system timezone if user timezone not available
+            return Calendar.autoupdatingCurrent
+        }
+    }
     
     init(
         startDate: Date,
@@ -44,11 +54,24 @@ struct NDayScheduleView: View {
         selectedEvent: Binding<CalendarEvent?> = .constant(nil),
         onBackgroundTap: (() -> Void)? = nil
     ) {
-        self.startDate = calendar.startOfDay(for: startDate)
+        // Set userTimezone first
+        self.userTimezone = userTimezone
+        
+        // Create a local calendar using user's timezone for initialization
+        let initCalendar: Calendar
+        if let userTimezone = userTimezone, let timeZone = TimeZone(identifier: userTimezone) {
+            var cal = Calendar(identifier: .gregorian)
+            cal.timeZone = timeZone
+            initCalendar = cal
+        } else {
+            initCalendar = Calendar.autoupdatingCurrent
+        }
+        
+        // Now initialize all stored properties
+        self.startDate = initCalendar.startOfDay(for: startDate)
         self.numberOfDays = max(1, numberOfDays)
         self.events = events
         self.focusEvent = focusEvent
-        self.userTimezone = userTimezone
         self.modalBottomPadding = modalBottomPadding
         self._selectedEvent = selectedEvent
         self.onBackgroundTap = onBackgroundTap
@@ -289,7 +312,7 @@ struct NDayScheduleView: View {
     ) -> some View {
         // When n=1, match ScheduleView exactly
         if numberOfDays == 1, let date = dates.first {
-            Text(Self.dateFormatter.string(from: date))
+            Text(dateFormatter.string(from: date))
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(ColorPalette.Text.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -298,7 +321,7 @@ struct NDayScheduleView: View {
         } else {
             HStack(spacing: 0) {
                 ForEach(Array(dates.enumerated()), id: \.element) { index, date in
-                    Text(Self.dateFormatter.string(from: date))
+                    Text(dateFormatter.string(from: date))
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(ColorPalette.Text.secondary)
                         .frame(width: dayColumnWidth, alignment: .leading)
@@ -780,20 +803,24 @@ struct NDayScheduleView: View {
         return "UTC"
     }
     
-    static let dateFormatter: DateFormatter = {
+    // Date formatter for date headers - uses user timezone
+    private var dateFormatter: DateFormatter {
         let formatter = DateFormatter()
         formatter.locale = Locale.autoupdatingCurrent
         formatter.dateFormat = "EEE M/d"
+        formatter.timeZone = calendar.timeZone
         return formatter
-    }()
+    }
 
-    static let timeRangeFormatter: DateFormatter = {
+    // Time range formatter - uses user timezone
+    private var timeRangeFormatter: DateFormatter {
         let formatter = DateFormatter()
         formatter.locale = Locale.autoupdatingCurrent
         formatter.timeStyle = .short
         formatter.dateStyle = .none
+        formatter.timeZone = calendar.timeZone
         return formatter
-    }()
+    }
     
     // MARK: - All-Day Event Row Packing
     
@@ -1381,8 +1408,8 @@ private extension NDayScheduleView {
         let timeRange: String
         if let originalStart = segment.event.event.start?.dateTime,
            let originalEnd = segment.event.event.end?.dateTime {
-            let formattedStart = Self.timeRangeFormatter.string(from: originalStart)
-            let formattedEnd = Self.timeRangeFormatter.string(from: originalEnd)
+            let formattedStart = timeRangeFormatter.string(from: originalStart)
+            let formattedEnd = timeRangeFormatter.string(from: originalEnd)
             timeRange = "\(formattedStart) – \(formattedEnd)"
         } else {
             timeRange = ""
