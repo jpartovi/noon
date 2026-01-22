@@ -60,7 +60,7 @@ struct ScheduleEventCard: View {
         if let calendarColor = calendarColor {
             let opacity: CGFloat
             if style == .highlight || style == .update {
-                opacity = 0.22  // Increased from 0.12 for more drastic background color change
+                opacity = 0.45  // Boosted saturation for highlight and update styles to make them more eye-catching
             } else if style == .destructive {
                 opacity = 0.3  // Darker for destructive style
             } else {
