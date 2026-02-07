@@ -18,7 +18,7 @@ final class AgentViewModel: ObservableObject {
         case completed(result: AgentActionResult)
         case failed(message: String)
     }
-    
+
     struct AgentError {
         let message: String  // What went wrong
         let context: String  // Where it happened (e.g., "Agent processing", "Creating event")
@@ -37,7 +37,9 @@ final class AgentViewModel: ObservableObject {
     @Published var transcriptionText: String?
     @Published var noticeMessage: String?
     @Published var errorState: AgentError?
-    
+    /// Real-time partial transcript from on-device speech recognition
+    @Published private(set) var liveTranscript: String = ""
+
     private var noticeDismissTask: Task<Void, Never>?
     private var errorDismissTask: Task<Void, Never>?
     
@@ -82,12 +84,16 @@ final class AgentViewModel: ObservableObject {
 
     private weak var authProvider: AuthSessionProviding?
     private let recorder: AgentAudioRecorder
+    private let speechRecognitionService: SpeechRecognitionService
     private let service: AgentActionServicing
     private let transcriptionService: TranscriptionServicing
     private let scheduleService: GoogleCalendarScheduleServicing
     private let calendarService: CalendarServicing
     private let showScheduleHandler: ShowScheduleActionHandling
     private let calendar: Foundation.Calendar = Foundation.Calendar.autoupdatingCurrent
+    /// Whether to use on-device speech recognition (true) or backend transcription (false)
+    private let useOnDeviceSpeechRecognition: Bool
+    private var liveTranscriptCancellable: AnyCancellable?
     
     private static let iso8601DateFormatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
@@ -98,15 +104,18 @@ final class AgentViewModel: ObservableObject {
 
     init(
         recorder: AgentAudioRecorder? = nil,
+        speechRecognitionService: SpeechRecognitionService? = nil,
         service: AgentActionServicing? = nil,
         transcriptionService: TranscriptionServicing? = nil,
         scheduleService: GoogleCalendarScheduleServicing? = nil,
         calendarService: CalendarServicing? = nil,
         showScheduleHandler: ShowScheduleActionHandling? = nil,
         initialScheduleDate: Date = Date(),
-        initialDisplayEvents: [DisplayEvent]? = nil
+        initialDisplayEvents: [DisplayEvent]? = nil,
+        useOnDeviceSpeechRecognition: Bool = true
     ) {
         self.recorder = recorder ?? AgentAudioRecorder()
+        self.speechRecognitionService = speechRecognitionService ?? SpeechRecognitionService()
         self.service = service ?? AgentActionService()
         self.transcriptionService = transcriptionService ?? TranscriptionService()
         self.scheduleService = scheduleService ?? GoogleCalendarScheduleService()
@@ -115,9 +124,20 @@ final class AgentViewModel: ObservableObject {
         self.scheduleDate = calendar.startOfDay(for: initialScheduleDate)
         self.displayEvents = initialDisplayEvents ?? []
         self.hasLoadedSchedule = !(initialDisplayEvents?.isEmpty ?? true)
-        
-        // Pre-warm audio session to eliminate delay on first recording
-        self.recorder.prewarm()
+        self.useOnDeviceSpeechRecognition = useOnDeviceSpeechRecognition
+
+        // Pre-warm audio session/speech recognition to eliminate delay on first recording
+        if useOnDeviceSpeechRecognition {
+            self.speechRecognitionService.prewarm()
+            // Subscribe to live transcript updates
+            self.liveTranscriptCancellable = self.speechRecognitionService.$partialTranscript
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] transcript in
+                    self?.liveTranscript = transcript
+                }
+        } else {
+            self.recorder.prewarm()
+        }
     }
 
     func configure(authProvider: AuthSessionProviding) {
@@ -136,7 +156,11 @@ final class AgentViewModel: ObservableObject {
     }
     
     func cleanupAudioSession() {
-        recorder.cleanup()
+        if useOnDeviceSpeechRecognition {
+            speechRecognitionService.cleanup()
+        } else {
+            recorder.cleanup()
+        }
     }
 
     func startRecording() {
@@ -145,13 +169,18 @@ final class AgentViewModel: ObservableObject {
         isRecording = true
         displayState = .recording
         transcriptionText = nil // Clear previous transcription when starting new recording
+        liveTranscript = "" // Clear live transcript
         noticeMessage = nil // Clear previous notice when starting new recording
         errorState = nil // Clear any previous errors when starting new recording
         errorDismissTask?.cancel() // Cancel any pending error dismiss task
 
         Task { @MainActor in
             do {
-                try await recorder.startRecording()
+                if useOnDeviceSpeechRecognition {
+                    try await speechRecognitionService.startRecording()
+                } else {
+                    try await recorder.startRecording()
+                }
             } catch {
                 // Recording errors are not agent/calendar action errors, use generic handler
                 handle(error: error)
@@ -167,39 +196,61 @@ final class AgentViewModel: ObservableObject {
 
         Task { @MainActor in
             do {
-                // Stop recording
-                let stopStart = Date()
-                guard let recording = try await recorder.stopRecording() else {
-                    displayState = .idle
-                    return
+                let transcribedText: String
+                let startingToken: String
+
+                if useOnDeviceSpeechRecognition {
+                    // On-device speech recognition path (faster - no backend transcription needed)
+                    let stopStart = Date()
+                    guard let transcript = try await speechRecognitionService.stopRecording() else {
+                        displayState = .idle
+                        liveTranscript = ""
+                        return
+                    }
+                    let stopDuration = Date().timeIntervalSince(stopStart)
+                    await timingLogger.logStep("frontend.stop_and_transcribe_on_device", duration: stopDuration, details: "text_length=\(transcript.count) chars")
+
+                    transcribedText = transcript
+                    liveTranscript = "" // Clear live transcript
+                    startingToken = try await resolveAccessToken(initial: accessToken)
+
+                    displayState = .uploading
+                } else {
+                    // Backend transcription path (original flow)
+                    let stopStart = Date()
+                    guard let recording = try await recorder.stopRecording() else {
+                        displayState = .idle
+                        return
+                    }
+                    let stopDuration = Date().timeIntervalSince(stopStart)
+                    await timingLogger.logStep("frontend.stop_recording", duration: stopDuration)
+                    defer { try? FileManager.default.removeItem(at: recording.fileURL) }
+
+                    startingToken = try await resolveAccessToken(initial: accessToken)
+
+                    displayState = .uploading
+
+                    // Transcribe audio via backend
+                    let transcribeStart = Date()
+                    let transcriptionResult = try await transcribeAudio(
+                        recording: recording,
+                        accessToken: startingToken
+                    )
+                    let transcribeDuration = Date().timeIntervalSince(transcribeStart)
+                    await timingLogger.logStep("frontend.transcribe_audio", duration: transcribeDuration, details: "text_length=\(transcriptionResult.text.count) chars")
+
+                    transcribedText = transcriptionResult.text
                 }
-                let stopDuration = Date().timeIntervalSince(stopStart)
-                await timingLogger.logStep("frontend.stop_recording", duration: stopDuration)
-                defer { try? FileManager.default.removeItem(at: recording.fileURL) }
 
-                let startingToken = try await resolveAccessToken(initial: accessToken)
-
-                displayState = .uploading
-                
-                // Step 1: Transcribe audio
-                let transcribeStart = Date()
-                let transcriptionResult = try await transcribeAudio(
-                    recording: recording,
-                    accessToken: startingToken
-                )
-                let transcribeDuration = Date().timeIntervalSince(transcribeStart)
-                await timingLogger.logStep("frontend.transcribe_audio", duration: transcribeDuration, details: "text_length=\(transcriptionResult.text.count) chars")
-                
-                let transcribedText = transcriptionResult.text
                 transcriptionText = transcribedText // Store transcription for display
                 print("Transcribed: \"\(transcribedText)\"")
-                
+
                 // Clear any existing highlights, notices, or confirmations from previous agent action state
                 agentAction = nil
                 focusEvent = nil
                 noticeMessage = nil
-                
-                // Step 2: Send to agent
+
+                // Send to agent
                 let agentStart = Date()
                 let (result, tokenUsed) = try await sendToAgent(
                     query: transcribedText,
@@ -257,6 +308,7 @@ final class AgentViewModel: ObservableObject {
         displayState = .idle
         isRecording = false
         transcriptionText = nil
+        liveTranscript = ""
         clearNoticeMessage()
         errorState = nil
         errorDismissTask?.cancel()
@@ -517,6 +569,17 @@ final class AgentViewModel: ObservableObject {
                 return "No audio captured. Try again."
             case .failedToCreateRecorder:
                 return "Could not start microphone."
+            }
+        case let error as SpeechRecognitionService.RecordingError:
+            switch error {
+            case .permissionDenied:
+                return "Speech recognition or microphone access denied. Enable in Settings."
+            case .speechRecognitionUnavailable:
+                return "Speech recognition is not available on this device."
+            case .noAudioCaptured:
+                return "No speech detected. Try again."
+            case .recognitionFailed(let message):
+                return "Speech recognition failed: \(message)"
             }
         case let error as ServerError:
             return "Request failed (\(error.statusCode)): \(error.message)"

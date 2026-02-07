@@ -46,23 +46,32 @@ def _run_async_in_thread(coro):
 Validator = Callable[[Dict[str, Any], Dict[str, Any]], Optional[str]]
 
 
-def check_calendar_write_permission(calendar_id: str, auth: Dict[str, Any]) -> bool:
+def check_calendar_write_permission(
+    calendar_id: str,
+    auth: Dict[str, Any],
+    calendars_cache: Optional[List[Dict[str, Any]]] = None
+) -> bool:
     """
     Check if user has write access to a calendar.
-    
+
     Args:
         calendar_id: Google Calendar ID to check
         auth: Authentication context with user info
-        
+        calendars_cache: Optional cached list of calendars to avoid HTTP call
+
     Returns:
         True if user has "writer" or "owner" role, False otherwise
     """
     try:
-        client = create_calendar_client()
-        # Get all calendars (which are already filtered to writable ones by the API)
-        # Use _run_async since list_calendars is async
-        calendars = _run_async(client.list_calendars(auth=auth))
-        
+        # Use cached calendars if available, otherwise fetch
+        if calendars_cache is not None:
+            calendars = calendars_cache
+        else:
+            client = create_calendar_client()
+            # Get all calendars (which are already filtered to writable ones by the API)
+            # Use _run_async since list_calendars is async
+            calendars = _run_async(client.list_calendars(auth=auth))
+
         # Find the calendar by ID
         for calendar in calendars:
             if calendar.get("id") == calendar_id:
@@ -71,57 +80,65 @@ def check_calendar_write_permission(calendar_id: str, auth: Dict[str, Any]) -> b
                 if access_role in {"writer", "owner"}:
                     return True
                 return False
-        
+
         # Calendar not found - assume no write permission
         logger.warning(f"Calendar {calendar_id} not found in user's calendars")
         return False
-        
+
     except Exception as e:
         logger.error(f"Error checking calendar write permission for {calendar_id}: {e}", exc_info=True)
         # On error, assume no permission (fail safe)
         return False
 
 
-def validate_write_permissions(result: Dict[str, Any], auth: Dict[str, Any]) -> Optional[str]:
+def validate_write_permissions(
+    result: Dict[str, Any],
+    auth: Dict[str, Any],
+    calendars_cache: Optional[List[Dict[str, Any]]] = None
+) -> Optional[str]:
     """
     Validate that the calendar has write permissions for create/update/delete operations.
-    
+
     Args:
         result: External tool result containing request metadata
         auth: Authentication context
-        
+        calendars_cache: Optional cached list of calendars to avoid HTTP call
+
     Returns:
         None if valid, error message string if invalid
     """
     result_type = result.get("type")
     metadata = result.get("metadata", {})
     calendar_id = metadata.get("calendar_id")
-    
+
     if not calendar_id:
         return "Validation failed: calendar_id is missing from request metadata."
-    
-    # Check write permission
-    has_write_permission = check_calendar_write_permission(calendar_id, auth)
-    
+
+    # Check write permission (use cache if available)
+    has_write_permission = check_calendar_write_permission(calendar_id, auth, calendars_cache)
+
     if not has_write_permission:
-        # Try to get calendar name for better error message
+        # Try to get calendar name for better error message (use cache if available)
         calendar_name = "unknown calendar"
         try:
-            client = create_calendar_client()
-            calendars = _run_async(client.list_calendars(auth=auth))
+            if calendars_cache is not None:
+                calendars = calendars_cache
+            else:
+                client = create_calendar_client()
+                calendars = _run_async(client.list_calendars(auth=auth))
             for calendar in calendars:
                 if calendar.get("id") == calendar_id:
                     calendar_name = calendar.get("name") or calendar_id
                     break
         except Exception:
             pass  # Use default calendar_name
-        
+
         return (
             f"Validation failed: Calendar '{calendar_id}' ({calendar_name}) is read-only. "
             f"You need write permissions to create/update/delete events. "
             f"Use list_calendars() to find a calendar with write access and retry."
         )
-    
+
     return None  # Validation passed
 
 
@@ -136,39 +153,48 @@ VALIDATORS: Dict[AgentResponseType, List[Validator]] = {
 }
 
 
-def validate_request(result: Dict[str, Any], auth: Dict[str, Any]) -> Optional[str]:
+def validate_request(
+    result: Dict[str, Any],
+    auth: Dict[str, Any],
+    calendars_cache: Optional[List[Dict[str, Any]]] = None
+) -> Optional[str]:
     """
     Validate a request by running all registered validators for its type.
-    
+
     Args:
         result: External tool result containing request metadata
         auth: Authentication context
-        
+        calendars_cache: Optional cached list of calendars to avoid HTTP calls
+
     Returns:
         None if all validators pass, error message string from first failing validator
     """
     result_type_str = result.get("type")
     if not result_type_str:
         return "Validation failed: request type is missing."
-    
+
     try:
         result_type = AgentResponseType(result_type_str)
     except ValueError:
         # Unknown request type - skip validation (pass through)
         logger.warning(f"Unknown request type for validation: {result_type_str}")
         return None
-    
+
     # Get validators for this request type
     validators = VALIDATORS.get(result_type, [])
-    
+
     # If no validators registered, request is valid (pass through)
     if not validators:
         return None
-    
+
     # Run all validators in order - return first error found
     for validator in validators:
         try:
-            error = validator(result, auth)
+            # Pass calendars_cache to validators that support it
+            if validator == validate_write_permissions:
+                error = validator(result, auth, calendars_cache)
+            else:
+                error = validator(result, auth)
             if error:
                 logger.info(f"Validation failed for {result_type}: {error}")
                 return error
@@ -176,6 +202,6 @@ def validate_request(result: Dict[str, Any], auth: Dict[str, Any]) -> Optional[s
             logger.error(f"Error running validator {validator.__name__} for {result_type}: {e}", exc_info=True)
             # On validator error, fail validation (fail safe)
             return f"Validation error in {validator.__name__}: {str(e)}"
-    
+
     # All validators passed
     return None

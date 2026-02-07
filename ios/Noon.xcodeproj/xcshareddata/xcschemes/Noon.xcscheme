@@ -78,7 +78,7 @@
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "AGENT_BASE_URL"
-            value = "https://noon-green.vercel.app"
+            value = "http://localhost:8000"
             isEnabled = "YES">
          </EnvironmentVariable>
       </EnvironmentVariables>

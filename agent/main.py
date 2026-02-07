@@ -72,21 +72,15 @@ def _build_architecture_section() -> str:
     """Agent Architecture - HOW the agent operates internally"""
     return """
 AGENT ARCHITECTURE:
-- This is a SINGLE-TURN interaction. You do NOT talk back to the user or have any back-and-forth.
-- You will always respond back to the user exactly once, with a tool call - never plain text.
+- SINGLE-TURN interaction. Respond with exactly ONE external tool call.
+- Cycle: User Query → (Optional Internal Tools) → External Tool → Terminate
+- If validation error occurs, retry with corrected information.
 
-You will follow this cycle: User Query → (Optional Internal Tools) → External Tool → Terminate
-
-INTERNAL TOOLS (information gathering - do NOT terminate):
-- Gather information needed to complete the request
-- Agent continues after internal tool execution
-
-EXTERNAL TOOLS (complete request - DO terminate):
-- Complete the user's request, responding directly to user
-- Agent terminates after external tool execution (unless there is a validation error)
-- ⚠️ CRITICAL: You can ONLY call ONE external tool per turn. If multiple events match, pick the ONE that best matches the user's description and call only that tool.
-
-You MUST ALWAYS end with exactly ONE external tool call."""
+CALENDAR SELECTION (for write operations):
+- MUST call list_calendars() first for create/update/delete operations.
+- Use ONLY calendar_id values from list_calendars() results (not from event reads).
+- Prefer primary calendar (is_primary: true).
+- Use full calendar_id format with @ suffix (never truncate)."""
 
 
 def _build_time_date_handling_section(
@@ -121,199 +115,43 @@ FORMATTING TIME INPUTS PROPERLY:
 - ❌ Wrong: "2026-01-14T00:00:00" (no timezone info)"""
 
 
-def _build_tool_reference_section() -> str:
-    """Tool Reference - Complete tool catalog with usage notes"""
-    return """TOOL REFERENCE:
-
-INTERNAL TOOLS (for gathering information - do NOT terminate):
-- read_schedule(start_time, end_time): Get events in a time window
-- search_events(keywords, start_time, end_time): Find events matching keywords
-- read_event(event_id, calendar_id): Get full details of a specific event
-- list_calendars(): List all available calendars
-
-EXTERNAL TOOLS (terminate agent and show results to user):
-- show_schedule(start_time, end_time): Display schedule to user
-- show_event(event_id, calendar_id): Display specific event to user
-- request_create_event(summary, calendar_id, start_time=None, end_time=None, start_date=None, end_date=None, description=None, location=None): Request to create event. Use start_time/end_time for timed events, or start_date/end_date for all-day events (e.g., birthdays, holidays). Only include description/location if explicitly requested or necessary.
-- request_update_event(event_id, calendar_id, summary=None, start_time=None, end_time=None, start_date=None, end_date=None, description=None, location=None): Request to update event. Use start_time/end_time for timed events, or start_date/end_date for all-day events. Only include fields that need updating. Only include description if explicitly requested.
-- request_delete_event(event_id, calendar_id): Request to delete event
-- do_nothing(reason): Handle unsupported/unclear requests
-
-CALENDAR SELECTION RULES (for write operations):
-For request_create_event, request_update_event, and request_delete_event:
-- You MUST call list_calendars() first and ONLY use calendar_id values from its results. list_calendars() returns only calendars with write access (access_role: "writer" or "owner").
-- NEVER use calendar_id values from event read results (read_schedule, search_events, read_event) - these may be read-only calendars.
-- Prefer the primary calendar (is_primary: true) if available, otherwise use any calendar from list_calendars().
-- calendar_id values must include the full format with @ suffix (e.g., "id@group.calendar.google.com") - NEVER truncate or modify them."""
-
-
 def _build_query_patterns_section() -> str:
-    """Query Intent Patterns - Decision flows for each query type"""
-    return """QUERY INTENT PATTERNS:
+    """Query Intent Patterns - Consolidated patterns and rules"""
+    return """QUERY PATTERNS:
 
-1. VIEW SCHEDULE
-Query intent: User wants to see their schedule for a time period
-Pattern: show_schedule(start_time, end_time)
-Example: "What is on my schedule tomorrow?" → show_schedule with 12:00 AM and 11:59 PM tomorrow
+1. VIEW SCHEDULE: show_schedule(start_time, end_time)
+   "What's on tomorrow?" → show_schedule(tomorrow 00:00, tomorrow 23:59)
+   "Show me this weekend" → show_schedule(Saturday 00:00, Sunday 23:59)
 
-2. FIND SPECIFIC EVENT
-Query intent: User wants to know about a specific event (by name or position)
-Pattern: search_events(keywords, start_time, end_time) → EXTRACT event_id and calendar_id from results → show_event(event_id, calendar_id)
+2. FIND EVENT: search_events → show_event
+   "When is my haircut?" → search_events("haircut", ...) → show_event(event_id, calendar_id)
+   - Extract keywords: "meeting with andrew" → "andrew", "my haircut" → "haircut"
+   - Use event_id AND calendar_id from the SAME search result
+   - Fallback: use read_schedule if search fails, then find event manually
 
-KEYWORD EXTRACTION FOR SEARCH:
-- Extract key terms from the user's query, especially names and event types
-- Remove filler words: "meeting", "with", "my", "the", "a", "an", "find", "show", etc.
-- For person names: extract just the name (e.g., "meeting with andrew" → "andrew")
-- For event types: extract the core term (e.g., "my haircut appointment" → "haircut")
-- If query mentions multiple names: try searching with both names together (e.g., "jude andrew")
-- Google Calendar search matches keywords/phrases in event titles, descriptions, and locations
-- Examples:
-  * "find my meeting with andrew" → search_events("andrew", ...)
-  * "when is jude and andrew meeting" → search_events("jude andrew", ...)
-  * "show me my haircut" → search_events("haircut", ...)
-  * "meeting with john smith" → search_events("john smith", ...)
+3. CREATE EVENT: list_calendars → request_create_event
+   "Schedule haircut next week" → list_calendars() → request_create_event(summary, calendar_id, times)
+   - All-day events: use start_date/end_date (end_date is exclusive, day after event)
+   - "Put Lola's birthday Feb 2" → request_create_event(summary, start_date="2026-02-02", end_date="2026-02-03")
+   - Only add description if user explicitly requests it
 
-FALLBACK STRATEGIES IF INITIAL SEARCH RETURNS NO RESULTS:
-- Try broader keywords: if "andrew" doesn't work, try variations or partial matches
-- Try broader date ranges: expand the time window if the initial search was too narrow
-- Use read_schedule as fallback: if you know the date but keywords aren't matching, use read_schedule(start_time, end_time) to get all events for that time period, then manually identify the matching event by checking event summaries/descriptions
-- Example fallback flow:
-  * search_events("andrew", ...) returns [] 
-  * → Try search_events("jude", ...) or expand date range
-  * → If still no results and date is known: read_schedule(...) → manually find event with "andrew" or "jude" in summary
+4. UPDATE EVENT: search_events → request_update_event
+   "Move haircut to Thursday" → search_events("haircut") → request_update_event(event_id, calendar_id, new_times)
+   - Only update fields user mentions
 
-MANDATORY: After search_events returns results, you MUST extract the event_id and calendar_id from the matching event in the results list, then immediately call show_event with those values.
-Optional: If you need full event details, call read_event(event_id, calendar_id) before show_event
-Example: "When is my haircut this weekend?" → search_events("haircut", Saturday 12:00 AM, Sunday 11:59 PM) → extract event_id and calendar_id from matching result → show_event(event_id, calendar_id)
-Example: "When is my first event tomorrow?" → read_schedule(tomorrow 12:00 AM, tomorrow 11:59 PM) → identify first event by start time → extract event_id and calendar_id → show_event(event_id, calendar_id)
+5. DELETE EVENT: search_events → request_delete_event
+   "Cancel my haircut" → search_events("haircut") → request_delete_event(event_id, calendar_id)
 
-3. CREATE EVENT
-Query intent: User wants to schedule/create a new event
-Pattern: list_calendars() → read_schedule(start_time, end_time) → request_create_event(event_details, calendar_id)
+6. UNSUPPORTED: do_nothing(reason)
 
-Calendar selection: MUST call list_calendars() FIRST to get calendars with write permissions, then use calendar_id from that result. Prefer primary calendar (is_primary: true) if available.
-
-Optional: If checking for conflicts with existing events, call search_events first
-
-All-day events: For events that should span the entire day (birthdays, vacations, etc.), use start_date and end_date parameters instead of start_time and end_time. The end_date should be the day after the event ends (exclusive). That is, for a single-day all-day event on February 2, use start_date="2026-02-02" and end_date="2026-02-03".
-
-Description parameter rules: Only include description parameter if:
-- The user explicitly mentions wanting a description (e.g., "with a note about...", "with description...")
-- The description is necessary for clarity (e.g., meeting agenda, important context)
-- Do NOT add descriptions automatically or make them up - most events don't need descriptions
-
-Example: "Can you schedule a haircut for me next week?" → list_calendars() → read_schedule(Monday 12:00 AM, Friday 11:59 PM) → request_create_event(summary: "haircut", start_time: available_time, end_time: available_time + duration, calendar_id: selected_from_list_calendars) - NO description parameter
-Example: "Schedule a team meeting next Tuesday with description 'Discuss Q1 goals'" → list_calendars() → request_create_event(..., description: "Discuss Q1 goals", calendar_id: selected_from_list_calendars)
-
-4. UPDATE EVENT
-Query intent: User wants to modify an existing event
-Pattern: search_events(keywords, start_time, end_time) → EXTRACT event_id and calendar_id from results → request_update_event(event_id, calendar_id, new_details)
-
-MANDATORY: After search_events returns results, you MUST extract the event_id and calendar_id from the matching event, then call request_update_event with those values.
-Optional: If checking availability at new time, call read_schedule(new_time_window) before request_update_event
-
-Calendar selection: Cannot change the calendar_id for an existing event, but must verify write access exists.
-
-All-day events: When updating all-day events, remember that end_date values you read for all day eventsare already exclusive (they represent the day after the event ends). So, if you are not wanting to change the end date, you do not need to include it in the request_update_event call. And if you do want to change it, just account for the fact that it was already the exclusive end, one day after the true last day of the event.
-
-Description parameter rules: Only include description parameter if:
-- The user explicitly mentions updating or adding a description
-- Do NOT add or modify descriptions automatically or make them up
-- Only update the fields the user explicitly mentions changing
-
-Example: "Can you move my haircut to Thursday next week?" → search_events("haircut", Monday 12:00 AM, Friday 11:59 PM) → extract event_id and calendar_id from first result → read_schedule(Thursday 12:00 AM, Thursday 11:59 PM) → request_update_event(event_id, calendar_id, start_time: new_thursday_time, end_time: new_thursday_time + duration) - NO description parameter
-
-5. DELETE EVENT
-Query intent: User wants to remove/cancel an event
-Pattern: search_events(keywords, start_time, end_time) → EXTRACT event_id and calendar_id from results → request_delete_event(event_id, calendar_id)
-
-MANDATORY: After search_events returns results, you MUST extract the event_id and calendar_id from the matching event, then immediately call request_delete_event with those values.
-
-Calendar selection: Must use calendar_id from search result (cannot change it).
-
-Example: "Can you remove my haircut this weekend?" → search_events("haircut", Saturday 12:00 AM, Sunday 11:59 PM) → extract event_id and calendar_id from first result → request_delete_event(event_id, calendar_id)
-
-6. UNSUPPORTED REQUEST
-Query intent: Request is not a calendar operation or is unclear
-Pattern: do_nothing(reason)
-
-Example: "Hello, how are you?" → do_nothing("Unsupported request")
-"""
-
-def _build_tool_result_processing_section() -> str:
-    """Tool Result Processing - How to extract and use data from tool responses"""
-    return """TOOL RESULT PROCESSING:
-
-RESULT FORMAT:
-Tool results are returned as strings containing Python list/dict representations. Parse them to extract the actual event_id and calendar_id values.
-
-EXTRACTION RULES:
-- After search_events returns events: The results are a list of event dictionaries. Extract the 'id' field as event_id and 'calendar_id' field as calendar_id from the matching event, then immediately call show_event(event_id, calendar_id) or request_delete_event(event_id, calendar_id) or request_update_event(event_id, calendar_id, ...) depending on the query intent.
-  ⚠️ IMPORTANT: The event_id and calendar_id must come from the SAME event dictionary. If you get an error that an event is not found, it may mean you mixed event_id and calendar_id from different events - search again and ensure you use the matching pair.
-- After read_schedule returns events: The results are a list of event dictionaries. If the query asks about a specific event (first, last, etc.), identify that event by sorting by start time, extract the 'id' field as event_id and 'calendar_id' field as calendar_id, then call show_event(event_id, calendar_id).
-- After read_event returns event details: Extract the 'id' field as event_id and 'calendar_id' field as calendar_id from the result dictionary, then call show_event(event_id, calendar_id).
-- ⚠️ IMPORTANT: Use calendar_id EXACTLY as it appears in the response - it must include the full format with @ suffix (e.g., "id@group.calendar.google.com"). NEVER truncate or modify it.
-
-MANDATORY FOLLOW-UP:
-- Never stop after an internal tool call - always process the results and call an external tool to complete the query
-- After ANY internal tool returns results, you MUST extract the necessary information (event_id, calendar_id, etc.) and call an external tool"""
-
-
-def _build_error_handling_section() -> str:
-    """Section 7: Error Handling & Validation - What to do when things go wrong"""
-    return """ERROR HANDLING & VALIDATION:
-
-VALIDATION ERRORS:
-If you receive a validation error after calling request_create_event, request_update_event, or request_delete_event:
-- The error message will explain the issue (e.g., "Calendar is read-only")
-- For create operations: Call list_calendars() to find a calendar with write access (access_role should be "writer" or "owner") and retry with a different calendar_id
-- For update/delete operations: You cannot change the calendar for an existing event - inform the user about the limitation
-- Always retry with the corrected information when validation errors occur"""
-
-
-def _build_examples_section() -> str:
-    """Examples & Trajectories - Concrete examples showing complete flows"""
-    return """EXAMPLES & TRAJECTORIES:
-
-1. "What is on my schedule tomorrow?"
-   → show_schedule(start_time: tomorrow 12:00 AM, end_time: tomorrow 11:59 PM)
-
-2. "When is my haircut this weekend?"
-   → search_events(keywords: "haircut", start_time: Saturday 12:00 AM, end_time: Sunday 11:59 PM)
-   → show_event(event_id: found_event_id, calendar_id: found_calendar_id)
-
-3. "Can you remove my haircut this weekend?"
-   → search_events(keywords: "haircut", start_time: Saturday 12:00 AM, end_time: Sunday 11:59 PM)
-   → request_delete_event(event_id: found_event_id, calendar_id: found_calendar_id)
-
-4. "Can you schedule a haircut for me next week?"
-   → list_calendars() → read_schedule(start_time: Monday 12:00 AM, end_time: Friday 11:59 PM)
-   → request_create_event(summary: "haircut", start_time: available_time, end_time: available_time + duration, calendar_id: selected_from_list_calendars)
-
-5. "Can you move my haircut to Thursday next week?"
-   → search_events(keywords: "haircut", start_time: Monday 12:00 AM, end_time: Friday 11:59 PM)
-   → read_schedule(start_time: Thursday 12:00 AM, end_time: Thursday 11:59 PM)
-   → request_update_event(event_id: found_event_id, calendar_id: found_calendar_id, start_time: new_thursday_time, end_time: new_thursday_time + duration)
-
-6. "Show me my schedule on Friday"
-   → show_schedule(start_time: Friday 12:00 AM, end_time: Friday 11:59 PM)
-   Note: If today is before Friday, use this week's Friday; if today is Friday or after, use next week's Friday
-
-7. "What's on my calendar next Thursday?"
-   → show_schedule(start_time: next Thursday 12:00 AM, end_time: next Thursday 11:59 PM)
-   Note: "next Thursday" means Thursday of next week (after this weekend)
-
-8. "Show me this weekend"
-   → show_schedule(start_time: Saturday 00:00:00, end_time: Sunday 23:59:59)
-   CRITICAL: Weekend means Saturday-Sunday ONLY. Find the next Saturday from today, then use that Saturday and the following Sunday. Verify the dates are Saturday-Sunday before calling the tool.
-
-9. "What's on my calendar next weekend?"
-   → show_schedule(start_time: next weekend Saturday 00:00:00, end_time: next weekend Sunday 23:59:59)
-   CRITICAL: Weekend means Saturday-Sunday ONLY. Calculate this weekend first, then add 7 days to get next weekend's Saturday. Verify the dates are Saturday-Sunday before calling the tool.
-
-10. "Put Lola's birthday on my calendar on February 2."
-   → list_calendars() → request_create_event(summary: "Lola's Birthday", start_date: "2026-02-02", end_date: "2026-02-03", calendar_id: selected_from_list_calendars)
-   Note: Birthdays are all-day events - use start_date and end_date (end_date is exclusive, so use the next day for single-day events)."""
+CRITICAL RULES:
+- Weekend = Saturday-Sunday ONLY
+- "next week" = Monday-Friday of following week
+- "next Thursday" = Thursday of next week (after this weekend)
+- Always use event_id AND calendar_id from same event in results
+- For write ops: list_calendars() FIRST, prefer primary calendar
+- Use full calendar_id with @ suffix (never truncate)
+- On validation error: retry with corrected info"""
 
 
 
@@ -343,13 +181,9 @@ def _build_system_prompt(
         _build_agent_identity_section(),
         _build_architecture_section(),
         _build_time_date_handling_section(current_datetime, user_timezone),
-        _build_tool_reference_section(),  # Includes calendar selection rules for write operations
-        _build_query_patterns_section(),  # Includes calendar selection in CREATE/UPDATE/DELETE patterns
-        _build_tool_result_processing_section(),
-        _build_error_handling_section(),
-        _build_examples_section(),
+        _build_query_patterns_section(),  # Combined patterns, examples, and processing rules
     ]
-    
+
     return "\n\n".join(filter(None, sections))  # Filter out empty sections
 
 
@@ -376,6 +210,7 @@ class State(TypedDict):
     current_time: Optional[str]  # ISO format datetime string in user's timezone with offset (e.g., "2026-01-13T08:47:00-08:00")
     timezone: Optional[str]  # IANA timezone name (e.g., "America/Los_Angeles")
     current_day_of_week: Optional[str]  # Full day name (e.g., "Monday", "Tuesday")
+    _cached_system_prompt: Optional[str]  # Cached system prompt to avoid rebuilding on each iteration
 
 
 class OutputState(TypedDict):
@@ -403,12 +238,19 @@ def agent_node(state: State) -> Dict[str, Any]:
     terminated = state.get("terminated", False)
     
     log_start("agent_node", details=f"query_length={len(query)}")
-    
+
+    # === DEBUG: Log incoming query and iteration ===
+    iteration = len([m for m in messages if isinstance(m, HumanMessage) or isinstance(m, ToolMessage)])
+    print(f"\n{'#'*60}")
+    print(f"🤖 AGENT NODE (iteration {iteration})")
+    print(f"   Query: \"{query}\"")
+    print(f"{'#'*60}\n")
+
     # Get time context from state
     current_time = state.get("current_time")
     user_timezone = state.get("timezone")
     current_day_of_week = state.get("current_day_of_week")
-    
+
     # Validate critical time context information
     if not current_time:
         logger.error("CRITICAL: current_time is missing from state")
@@ -419,11 +261,17 @@ def agent_node(state: State) -> Dict[str, Any]:
     if not current_day_of_week:
         logger.error("CRITICAL: current_day_of_week is missing from state")
         raise ValueError("current_day_of_week is required in state but was not provided")
-    
-    # Build system prompt from organized sections
-    system_instruction = SystemMessage(content=_build_system_prompt(
-        current_time, user_timezone
-    ))
+
+    # Use cached system prompt if available, otherwise build and cache it
+    cached_prompt = state.get("_cached_system_prompt")
+    if cached_prompt:
+        system_instruction = SystemMessage(content=cached_prompt)
+    else:
+        prompt_start_time = time.time()
+        prompt_content = _build_system_prompt(current_time, user_timezone)
+        prompt_duration = time.time() - prompt_start_time
+        log_step("agent_node.build_system_prompt", prompt_duration)
+        system_instruction = SystemMessage(content=prompt_content)
     
     # Initialize messages if empty
     if not messages:
@@ -463,6 +311,15 @@ def agent_node(state: State) -> Dict[str, Any]:
             
             logger.info(f"Converted {len(tool_calls_dict)} tool calls: {[tc.get('name', 'unknown') for tc in tool_calls_dict]}")
             logger.info(f"Tool calls dict structure: {tool_calls_dict}")
+            # === DEBUG: Log each tool call with full arguments ===
+            for tc in tool_calls_dict:
+                tc_name = tc.get('name', 'unknown')
+                tc_args = tc.get('args', {})
+                print(f"\n{'='*60}")
+                print(f"🔧 AGENT DECISION: call {tc_name}")
+                for arg_key, arg_val in tc_args.items():
+                    print(f"   {arg_key}: {arg_val}")
+                print(f"{'='*60}\n")
             # Return state with tool calls for tool execution node
             # Ensure success is True (or at least not False) so routing works correctly
             node_duration = time.time() - node_start_time
@@ -474,6 +331,7 @@ def agent_node(state: State) -> Dict[str, Any]:
                 "tool_results": {
                     "tool_calls": tool_calls_dict,
                 },
+                "_cached_system_prompt": cached_prompt or system_instruction.content,  # Cache for subsequent iterations
             }
         else:
             # No tool calls - this should not happen with tool_choice="required"
@@ -576,14 +434,23 @@ def tool_execution_node(state: State) -> Dict[str, Any]:
         has_external_tool = False
         external_tool_result = None
         
+        # Track calendars cache for validation optimization
+        calendars_cache = tool_results.get("calendars_cache")
+
         for tool_call in tool_calls:
             tool_name = tool_call.get("name", "")
             tool_args = tool_call.get("args", {})
             tool_id = tool_call.get("id", "")
-            
+
             logger.info(f"Executing tool: {tool_name} with args: {list(tool_args.keys())}")
             logger.info(f"Tool name in TOOL_MAP: {tool_name in TOOL_MAP}")
             logger.info(f"Tool name in EXTERNAL_TOOL_NAMES: {tool_name in EXTERNAL_TOOL_NAMES}")
+            # === DEBUG: Log tool execution with full args ===
+            print(f"\n{'='*60}")
+            print(f"⚡ EXECUTING: {tool_name}")
+            for arg_key, arg_val in tool_args.items():
+                print(f"   {arg_key}: {arg_val}")
+            print(f"{'='*60}")
             
             if tool_name not in TOOL_MAP:
                 logger.error(f"Unknown tool: {tool_name}. Available tools: {list(TOOL_MAP.keys())}")
@@ -604,6 +471,21 @@ def tool_execution_node(state: State) -> Dict[str, Any]:
                 log_step(f"tool_execution_node.tool.{tool_name}", tool_duration)
                 logger.info(f"Tool {tool_name} executed successfully, result type: {type(result)}")
                 
+                # === DEBUG: Log tool result ===
+                if isinstance(result, list):
+                    print(f"   ✅ RESULT: {len(result)} items returned")
+                    for i, item in enumerate(result[:5]):  # Show first 5
+                        summary = item.get('summary', 'N/A') if isinstance(item, dict) else str(item)[:80]
+                        print(f"      [{i}] {summary}")
+                    if len(result) > 5:
+                        print(f"      ... and {len(result) - 5} more")
+                elif isinstance(result, dict):
+                    result_type = result.get('type', result.get('summary', 'N/A'))
+                    print(f"   ✅ RESULT: {result_type}")
+                else:
+                    print(f"   ✅ RESULT: {str(result)[:200]}")
+                print()
+
                 # Check if this is an external tool
                 if tool_name in EXTERNAL_TOOL_NAMES:
                     has_external_tool = True
@@ -627,6 +509,10 @@ def tool_execution_node(state: State) -> Dict[str, Any]:
                         )
                     )
                     logger.info(f"Internal tool {tool_name} executed, result length: {len(str(result))}")
+
+                    # Cache list_calendars result to avoid redundant calls in validation
+                    if tool_name == "list_calendars" and isinstance(result, list):
+                        calendars_cache = result
             
             except Exception as e:
                 error_msg = str(e)
@@ -646,19 +532,23 @@ def tool_execution_node(state: State) -> Dict[str, Any]:
             # External tool was called - DON'T terminate yet, let validation_node decide
             # Validation will run before termination
             log_step("tool_execution_node", node_duration, details="external tool executed")
+            tool_results_dict = {"external_tool_result": external_tool_result}
+            if calendars_cache is not None:
+                tool_results_dict["calendars_cache"] = calendars_cache
             return {
                 "messages": new_messages,
-                "tool_results": {
-                    "external_tool_result": external_tool_result,
-                },
+                "tool_results": tool_results_dict,
                 "terminated": False,  # Don't terminate yet - validation will decide
             }
         else:
             # Only internal tools - continue agent loop
             log_step("tool_execution_node", node_duration, details="result=internal_tools_only")
+            tool_results_dict = {}
+            if calendars_cache is not None:
+                tool_results_dict["calendars_cache"] = calendars_cache
             return {
                 "messages": new_messages,
-                "tool_results": {},
+                "tool_results": tool_results_dict,
             }
     
     except Exception as e:
@@ -684,11 +574,12 @@ def validation_node(state: State) -> Dict[str, Any]:
     try:
         tool_results = state.get("tool_results", {})
         external_tool_result = tool_results.get("external_tool_result")
+        calendars_cache = tool_results.get("calendars_cache")  # Use cached calendars if available
         messages = state.get("messages", [])
         auth = state.get("auth")
-        
+
         log_start("validation_node")
-        
+
         # If no external tool result, nothing to validate - proceed
         if not external_tool_result:
             logger.info("No external tool result to validate - proceeding")
@@ -697,14 +588,14 @@ def validation_node(state: State) -> Dict[str, Any]:
             return {
                 "terminated": True,
             }
-        
+
         # Extract request type from external tool result
         result_type = external_tool_result.get("type")
         logger.info(f"Validating request type: {result_type}")
-        
-        # Validate the request
+
+        # Validate the request (pass calendars_cache to avoid redundant HTTP calls)
         validate_start_time = time.time()
-        validation_error = validate_request(external_tool_result, auth)
+        validation_error = validate_request(external_tool_result, auth, calendars_cache=calendars_cache)
         validate_duration = time.time() - validate_start_time
         log_step("validation_node.validate_request", validate_duration)
         
