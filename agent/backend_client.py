@@ -5,7 +5,7 @@ Makes HTTP requests to backend API endpoints for real Google Calendar data.
 
 import os
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, ClassVar
 import httpx
 
 from agent.calendar_client import CalendarClient
@@ -16,10 +16,14 @@ logger = logging.getLogger(__name__)
 class BackendClient(CalendarClient):
     """
     HTTP client implementation that calls backend API endpoints.
-    
+
     Uses Supabase JWT token from auth dict for authentication.
+    Uses a persistent HTTP client with connection pooling for performance.
     """
-    
+
+    # Shared persistent HTTP client for connection pooling
+    _http_client: Optional[httpx.AsyncClient] = None
+
     def __init__(self):
         """Initialize backend client with base URL from environment."""
         # Try BACKEND_URL first (matches .env.example), fall back to BACKEND_API_URL for backwards compatibility
@@ -28,6 +32,23 @@ class BackendClient(CalendarClient):
         self.base_url = self.base_url.rstrip("/")
         self.timeout = 30.0  # 30 second timeout for API calls
         logger.info(f"BackendClient initialized with base_url: {self.base_url}")
+
+    @classmethod
+    def _get_client(cls) -> httpx.AsyncClient:
+        """Get or create the shared HTTP client with connection pooling."""
+        if cls._http_client is None or cls._http_client.is_closed:
+            cls._http_client = httpx.AsyncClient(
+                timeout=30.0,
+                limits=httpx.Limits(max_keepalive_connections=10, max_connections=20),
+            )
+        return cls._http_client
+
+    @classmethod
+    async def close(cls):
+        """Close the shared HTTP client. Call during shutdown."""
+        if cls._http_client is not None and not cls._http_client.is_closed:
+            await cls._http_client.aclose()
+            cls._http_client = None
         
     def _get_auth_token(self, auth: Optional[Dict[str, Any]]) -> str:
         """
@@ -81,40 +102,40 @@ class BackendClient(CalendarClient):
             "Content-Type": "application/json",
         }
         
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
+        client = self._get_client()
+        try:
+            response = await client.request(
+                method=method,
+                url=url,
+                headers=headers,
+                json=json_data,
+                params=params,
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            # Extract error message from response body
+            # FastAPI returns JSON with "detail" field for HTTPException
+            error_message = "Unknown error"
             try:
-                response = await client.request(
-                    method=method,
-                    url=url,
-                    headers=headers,
-                    json=json_data,
-                    params=params,
-                )
-                response.raise_for_status()
-                return response.json()
-            except httpx.HTTPStatusError as e:
-                # Extract error message from response body
-                # FastAPI returns JSON with "detail" field for HTTPException
-                error_message = "Unknown error"
-                try:
-                    error_data = e.response.json()
-                    if isinstance(error_data, dict) and "detail" in error_data:
-                        error_message = str(error_data["detail"])
-                    elif isinstance(error_data, dict) and "message" in error_data:
-                        error_message = str(error_data["message"])
-                    elif e.response.text:
-                        error_message = e.response.text
-                except Exception:
-                    # If we can't parse the error, use response text or status code
-                    error_message = e.response.text or f"Backend API error: {e.response.status_code}"
-                
-                logger.error(
-                    f"Backend API error: {method} {url} - {e.response.status_code}: {error_message}"
-                )
-                raise ValueError(f"Backend API error: {error_message}") from e
-            except httpx.RequestError as e:
-                logger.error(f"Backend API request failed: {method} {url} - {str(e)}")
-                raise ValueError(f"Backend API request failed: {str(e)}") from e
+                error_data = e.response.json()
+                if isinstance(error_data, dict) and "detail" in error_data:
+                    error_message = str(error_data["detail"])
+                elif isinstance(error_data, dict) and "message" in error_data:
+                    error_message = str(error_data["message"])
+                elif e.response.text:
+                    error_message = e.response.text
+            except Exception:
+                # If we can't parse the error, use response text or status code
+                error_message = e.response.text or f"Backend API error: {e.response.status_code}"
+
+            logger.error(
+                f"Backend API error: {method} {url} - {e.response.status_code}: {error_message}"
+            )
+            raise ValueError(f"Backend API error: {error_message}") from e
+        except httpx.RequestError as e:
+            logger.error(f"Backend API request failed: {method} {url} - {str(e)}")
+            raise ValueError(f"Backend API request failed: {str(e)}") from e
     
     async def read_schedule(
         self,

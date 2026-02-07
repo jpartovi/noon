@@ -54,44 +54,18 @@ def set_calendar_client(client):
     _calendar_client = client
 
 
-def _run_async(coro):
-    """Helper to run async functions synchronously."""
-    try:
-        # Try to get existing event loop
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            # If loop is running, we're in an async context - this shouldn't happen for tools
-            # but handle it by creating a new thread
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                future = executor.submit(_run_async_in_thread, coro)
-                return future.result()
-        else:
-            return loop.run_until_complete(coro)
-    except RuntimeError:
-        # No event loop, create new one
-        return _run_async_in_thread(coro)
-
-def _run_async_in_thread(coro):
-    """Run async function in a new thread with its own event loop."""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
 
 
 # Internal tools - gather information without terminating
 @tool
-def read_schedule(start_time: str, end_time: str) -> List[Dict[str, Any]]:
+async def read_schedule(start_time: str, end_time: str) -> List[Dict[str, Any]]:
     """
     Read events from the schedule within a time window.
-    
+
     Args:
         start_time: Timezone-aware ISO format datetime string with offset (e.g., "2026-01-14T00:00:00-08:00")
         end_time: Timezone-aware ISO format datetime string with offset (e.g., "2026-01-14T23:59:59-08:00")
-    
+
     Returns:
         List of events with minimal details (id, summary, start, end, calendar_id)
         All events include both id and calendar_id (required for event identification).
@@ -99,15 +73,13 @@ def read_schedule(start_time: str, end_time: str) -> List[Dict[str, Any]]:
     try:
         auth = get_auth_context()
         client = get_calendar_client()
-        
-        # Run async method synchronously
-        events = _run_async(
-            client.read_schedule(start_time, end_time, auth=auth)
-        )
-        
+
+        # Native async call
+        events = await client.read_schedule(start_time, end_time, auth=auth)
+
         # Log the raw response for debugging
         logger.info(f"read_schedule returned {len(events)} events")
-        
+
         # Ensure all events have both id and calendar_id (required)
         result = []
         for event in events:
@@ -130,38 +102,36 @@ def read_schedule(start_time: str, end_time: str) -> List[Dict[str, Any]]:
 
 
 @tool
-def search_events(keywords: str, start_time: str, end_time: str) -> List[Dict[str, Any]]:
+async def search_events(keywords: str, start_time: str, end_time: str) -> List[Dict[str, Any]]:
     """
     Search for events matching keywords within a time window.
-    
+
     IMPORTANT: Extract key terms from the user's query - don't use full phrases.
     - Remove filler words like "meeting", "with", "my", "the", etc.
     - Extract person names (e.g., "meeting with andrew" → "andrew")
     - Extract event types (e.g., "my haircut appointment" → "haircut")
-    
+
     Args:
         keywords: Key terms to search for (extracted from user query, not literal phrase)
                   Examples: "andrew", "haircut", "jude andrew", "john smith"
                   Bad examples: "meeting with andrew", "my haircut appointment"
         start_time: Timezone-aware ISO format datetime string with offset (e.g., "2026-01-14T00:00:00-08:00")
         end_time: Timezone-aware ISO format datetime string with offset (e.g., "2026-01-14T23:59:59-08:00")
-    
+
     Returns:
         List of matching events with minimal details.
         All events include both id and calendar_id (required for event identification).
-        
+
     Note: Google Calendar API searches for keywords/phrases in event titles, descriptions, and locations.
           Use extracted key terms, not full natural language phrases.
     """
     try:
         auth = get_auth_context()
         client = get_calendar_client()
-        
-        # Run async method synchronously
-        events = _run_async(
-            client.search_events(keywords, start_time, end_time, auth=auth)
-        )
-        
+
+        # Native async call
+        events = await client.search_events(keywords, start_time, end_time, auth=auth)
+
         # Ensure all events have both id and calendar_id (required)
         result = []
         for event in events:
@@ -182,32 +152,30 @@ def search_events(keywords: str, start_time: str, end_time: str) -> List[Dict[st
 
 
 @tool
-def read_event(event_id: str, calendar_id: str) -> Dict[str, Any]:
+async def read_event(event_id: str, calendar_id: str) -> Dict[str, Any]:
     """
     Read detailed information about a specific event.
-    
+
     Args:
         event_id: The ID of the event to read
         calendar_id: The ID of the calendar containing the event
-    
+
     Returns:
         Detailed event information with both id and calendar_id (required).
     """
     try:
         auth = get_auth_context()
         client = get_calendar_client()
-        
-        # Run async method synchronously
-        event = _run_async(
-            client.read_event(event_id, calendar_id, auth=auth)
-        )
-        
+
+        # Native async call
+        event = await client.read_event(event_id, calendar_id, auth=auth)
+
         # Ensure both id and calendar_id are present (required)
         if "id" not in event:
             event["id"] = event_id
         if "calendar_id" not in event:
             event["calendar_id"] = calendar_id
-            
+
         return event
     except Exception as e:
         error_msg = str(e)
@@ -226,13 +194,13 @@ def read_event(event_id: str, calendar_id: str) -> Dict[str, Any]:
 
 
 @tool
-def list_calendars() -> List[Dict[str, Any]]:
+async def list_calendars() -> List[Dict[str, Any]]:
     """
     List all available calendars from ALL connected Google accounts with write permissions.
-    
+
     IMPORTANT: This tool returns ONLY calendars where you have write access (access_role: "writer" or "owner").
     Use this tool to get valid calendar_ids for create/update/delete operations.
-    
+
     Returns:
         List of calendars with their details, including:
         - id: Calendar ID (use this for calendar_id in create/update/delete operations)
@@ -243,12 +211,10 @@ def list_calendars() -> List[Dict[str, Any]]:
     try:
         auth = get_auth_context()
         client = get_calendar_client()
-        
-        # Run async method synchronously
-        calendars = _run_async(
-            client.list_calendars(auth=auth)
-        )
-        
+
+        # Native async call
+        calendars = await client.list_calendars(auth=auth)
+
         return calendars
     except Exception as e:
         logger.error(f"Error in list_calendars: {str(e)}", exc_info=True)

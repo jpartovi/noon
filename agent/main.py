@@ -68,19 +68,50 @@ def _build_agent_identity_section() -> str:
     Note: the queries you recieve are trascribed from audio, so they may not be perfect - don't take everything literally."""
 
 
-def _build_architecture_section() -> str:
+def _build_architecture_section(writable_calendars: Optional[List[Dict[str, Any]]] = None) -> str:
     """Agent Architecture - HOW the agent operates internally"""
-    return """
+    base = """
 AGENT ARCHITECTURE:
 - SINGLE-TURN interaction. Respond with exactly ONE external tool call.
 - Cycle: User Query → (Optional Internal Tools) → External Tool → Terminate
-- If validation error occurs, retry with corrected information.
+- If validation error occurs, retry with corrected information."""
+
+    # If writable calendars are pre-fetched, include them directly
+    if writable_calendars:
+        # Format calendars for the prompt
+        calendar_lines = []
+        primary_id = None
+        for cal in writable_calendars:
+            name = cal.get("name", "Unknown")
+            cal_id = cal.get("id", "")
+            is_primary = cal.get("is_primary", False)
+            if is_primary:
+                primary_id = cal_id
+                calendar_lines.append(f"  - {name} (PRIMARY): {cal_id}")
+            else:
+                calendar_lines.append(f"  - {name}: {cal_id}")
+
+        calendars_str = "\n".join(calendar_lines)
+        calendar_section = f"""
+
+WRITABLE CALENDARS (pre-fetched, use directly — do NOT call list_calendars):
+{calendars_str}
+
+CALENDAR SELECTION (for write operations):
+- Use calendar_id values from WRITABLE CALENDARS above.
+- Prefer primary calendar when available.
+- Use full calendar_id format with @ suffix (never truncate)."""
+    else:
+        # Fallback: instruct to call list_calendars
+        calendar_section = """
 
 CALENDAR SELECTION (for write operations):
 - MUST call list_calendars() first for create/update/delete operations.
 - Use ONLY calendar_id values from list_calendars() results (not from event reads).
 - Prefer primary calendar (is_primary: true).
 - Use full calendar_id format with @ suffix (never truncate)."""
+
+    return base + calendar_section
 
 
 def _build_time_date_handling_section(
@@ -157,7 +188,8 @@ CRITICAL RULES:
 
 def _build_system_prompt(
     current_time: str,
-    user_timezone: str
+    user_timezone: str,
+    writable_calendars: Optional[List[Dict[str, Any]]] = None
 ) -> str:
     """Assemble complete system prompt from all sections"""
     # Parse ISO string to datetime object
@@ -176,10 +208,10 @@ def _build_system_prompt(
         # Fallback: try to create datetime from string parts
         # This should not happen in normal operation, but provides a fallback
         raise ValueError(f"Invalid current_time format: {current_time}") from e
-    
+
     sections = [
         _build_agent_identity_section(),
-        _build_architecture_section(),
+        _build_architecture_section(writable_calendars),
         _build_time_date_handling_section(current_datetime, user_timezone),
         _build_query_patterns_section(),  # Combined patterns, examples, and processing rules
     ]
@@ -211,6 +243,7 @@ class State(TypedDict):
     timezone: Optional[str]  # IANA timezone name (e.g., "America/Los_Angeles")
     current_day_of_week: Optional[str]  # Full day name (e.g., "Monday", "Tuesday")
     _cached_system_prompt: Optional[str]  # Cached system prompt to avoid rebuilding on each iteration
+    writable_calendars: Optional[List[Dict[str, Any]]]  # Pre-fetched calendars for write operations
 
 
 class OutputState(TypedDict):
@@ -268,7 +301,8 @@ def agent_node(state: State) -> Dict[str, Any]:
         system_instruction = SystemMessage(content=cached_prompt)
     else:
         prompt_start_time = time.time()
-        prompt_content = _build_system_prompt(current_time, user_timezone)
+        writable_calendars = state.get("writable_calendars")
+        prompt_content = _build_system_prompt(current_time, user_timezone, writable_calendars)
         prompt_duration = time.time() - prompt_start_time
         log_step("agent_node.build_system_prompt", prompt_duration)
         system_instruction = SystemMessage(content=prompt_content)
@@ -363,7 +397,7 @@ def agent_node(state: State) -> Dict[str, Any]:
         }
 
 
-def tool_execution_node(state: State) -> Dict[str, Any]:
+async def tool_execution_node(state: State) -> Dict[str, Any]:
     """
     Execute tools based on LLM tool calls.
     Distinguishes between internal and external tools.
@@ -463,10 +497,15 @@ def tool_execution_node(state: State) -> Dict[str, Any]:
                 continue
             
             try:
-                # Execute the tool
+                # Execute the tool (async tools use ainvoke, sync tools use invoke)
                 tool = TOOL_MAP[tool_name]
                 tool_start_time = time.time()
-                result = tool.invoke(tool_args)
+                # Check if tool is async (internal tools are async, external tools are sync)
+                if tool_name in INTERNAL_TOOL_NAMES:
+                    # Async tool - use ainvoke
+                    result = await tool.ainvoke(tool_args)
+                else:
+                    result = tool.invoke(tool_args)
                 tool_duration = time.time() - tool_start_time
                 log_step(f"tool_execution_node.tool.{tool_name}", tool_duration)
                 logger.info(f"Tool {tool_name} executed successfully, result type: {type(result)}")

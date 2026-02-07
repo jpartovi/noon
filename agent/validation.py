@@ -5,7 +5,6 @@ different validation steps. Validators are registered in a VALIDATORS dictionary
 and run in order when a request is validated.
 """
 
-import asyncio
 import logging
 from typing import Dict, Any, Optional, List, Callable
 
@@ -13,34 +12,6 @@ from agent.schemas.agent_response import AgentResponseType
 from agent.calendar_client import create_calendar_client
 
 logger = logging.getLogger(__name__)
-
-
-def _run_async(coro):
-    """Helper to run async functions synchronously (same as in tools.py)."""
-    try:
-        # Try to get existing event loop
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            # If loop is running, create new thread
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                future = executor.submit(_run_async_in_thread, coro)
-                return future.result()
-        else:
-            return loop.run_until_complete(coro)
-    except RuntimeError:
-        # No event loop, create new one
-        return _run_async_in_thread(coro)
-
-
-def _run_async_in_thread(coro):
-    """Run async function in a new thread with its own event loop."""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
 
 # Validator function type: takes (result, auth) and returns None if valid, error message if invalid
 Validator = Callable[[Dict[str, Any], Dict[str, Any]], Optional[str]]
@@ -57,20 +28,19 @@ def check_calendar_write_permission(
     Args:
         calendar_id: Google Calendar ID to check
         auth: Authentication context with user info
-        calendars_cache: Optional cached list of calendars to avoid HTTP call
+        calendars_cache: Cached list of calendars (should be provided for write operations)
 
     Returns:
         True if user has "writer" or "owner" role, False otherwise
     """
     try:
-        # Use cached calendars if available, otherwise fetch
-        if calendars_cache is not None:
-            calendars = calendars_cache
-        else:
-            client = create_calendar_client()
-            # Get all calendars (which are already filtered to writable ones by the API)
-            # Use _run_async since list_calendars is async
-            calendars = _run_async(client.list_calendars(auth=auth))
+        # For write operations, list_calendars should have been called and cached
+        if calendars_cache is None:
+            logger.warning(f"No calendars cache available for validation of calendar {calendar_id}")
+            # Without cache, we cannot validate - return False to trigger retry with list_calendars
+            return False
+
+        calendars = calendars_cache
 
         # Find the calendar by ID
         for calendar in calendars:
@@ -118,20 +88,13 @@ def validate_write_permissions(
     has_write_permission = check_calendar_write_permission(calendar_id, auth, calendars_cache)
 
     if not has_write_permission:
-        # Try to get calendar name for better error message (use cache if available)
+        # Try to get calendar name for better error message (use cache)
         calendar_name = "unknown calendar"
-        try:
-            if calendars_cache is not None:
-                calendars = calendars_cache
-            else:
-                client = create_calendar_client()
-                calendars = _run_async(client.list_calendars(auth=auth))
-            for calendar in calendars:
+        if calendars_cache is not None:
+            for calendar in calendars_cache:
                 if calendar.get("id") == calendar_id:
                     calendar_name = calendar.get("name") or calendar_id
                     break
-        except Exception:
-            pass  # Use default calendar_name
 
         return (
             f"Validation failed: Calendar '{calendar_id}' ({calendar_name}) is read-only. "

@@ -6,6 +6,7 @@
 //
 
 import AVFoundation
+import Combine
 import Speech
 
 /// Protocol for speech recognition service
@@ -281,37 +282,35 @@ final class SpeechRecognitionService: NSObject, ObservableObject, SpeechRecognit
         // Check and request microphone permission
         if isMicPermissionGranted != true {
             let session = AVAudioSession.sharedInstance()
-            let micStatus: AVAudioSession.RecordPermission
+            let micGranted: Bool
 
             if #available(iOS 17.0, *) {
                 let audioApp = AVAudioApplication.shared
-                micStatus = audioApp.recordPermission
+                switch audioApp.recordPermission {
+                case .granted:
+                    micGranted = true
+                case .undetermined:
+                    micGranted = await AVAudioApplication.requestRecordPermission()
+                default:
+                    micGranted = false
+                }
             } else {
-                micStatus = session.recordPermission
-            }
-
-            switch micStatus {
-            case .granted:
-                isMicPermissionGranted = true
-            case .denied:
-                isMicPermissionGranted = false
-                throw RecordingError.permissionDenied
-            case .undetermined:
-                let granted: Bool
-                if #available(iOS 17.0, *) {
-                    granted = await AVAudioApplication.requestRecordPermission()
-                } else {
-                    granted = await withCheckedContinuation { continuation in
+                switch session.recordPermission {
+                case .granted:
+                    micGranted = true
+                case .undetermined:
+                    micGranted = await withCheckedContinuation { continuation in
                         session.requestRecordPermission { granted in
                             continuation.resume(returning: granted)
                         }
                     }
+                default:
+                    micGranted = false
                 }
-                isMicPermissionGranted = granted
-                if !granted {
-                    throw RecordingError.permissionDenied
-                }
-            @unknown default:
+            }
+
+            isMicPermissionGranted = micGranted
+            if !micGranted {
                 throw RecordingError.permissionDenied
             }
         }

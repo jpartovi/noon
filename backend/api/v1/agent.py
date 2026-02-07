@@ -31,6 +31,47 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 
+
+async def _prefetch_writable_calendars(user_id: str) -> list:
+    """
+    Pre-fetch writable calendars for the user to include in agent state.
+
+    This eliminates an LLM round-trip for write operations (create/update/delete)
+    by providing the calendar list upfront instead of requiring the agent to call
+    list_calendars() first.
+
+    Returns:
+        List of writable calendars with id, name, is_primary, and access_role.
+    """
+    from domains.calendars.repository import CalendarRepository
+
+    try:
+        repository = CalendarRepository()
+        user_calendars = repository.get_calendars(user_id)
+
+        # Filter to only include calendars with write permissions
+        writable_access_roles = {"writer", "owner"}
+        formatted_calendars = []
+
+        for cal in user_calendars:
+            access_role = cal.get("access_role")
+            if access_role not in writable_access_roles:
+                continue
+
+            formatted_calendars.append({
+                "id": cal.get("google_calendar_id"),
+                "name": cal.get("name"),
+                "is_primary": cal.get("is_primary", False),
+                "access_role": access_role,
+            })
+
+        return formatted_calendars
+
+    except Exception as e:
+        logger.warning(f"Failed to prefetch calendars for user {user_id}: {e}")
+        # Return empty list on error - agent will fall back to calling list_calendars()
+        return []
+
 # Initialize transcription service
 transcription_service = TranscriptionService()
 
@@ -172,7 +213,13 @@ async def agent_action(
         user_timezone = get_user_timezone(current_user.id)
         timezone_duration = time.time() - timezone_start
         log_step("backend.api.action.get_timezone", timezone_duration)
-        
+
+        # Pre-fetch writable calendars to eliminate an LLM round-trip for write operations
+        calendars_start = time.time()
+        prefetched_calendars = await _prefetch_writable_calendars(current_user.id)
+        calendars_duration = time.time() - calendars_start
+        log_step("backend.api.action.prefetch_calendars", calendars_duration, details=f"count={len(prefetched_calendars)}")
+
         # Convert to user's timezone for current time calculation
         current_utc = datetime.now(timezone.utc)
         user_tz = ZoneInfo(user_timezone)
@@ -187,11 +234,12 @@ async def agent_action(
             "type": None,
             "metadata": {},
             "messages": [],
-            "tool_results": {},
+            "tool_results": {"calendars_cache": prefetched_calendars} if prefetched_calendars else {},
             "terminated": False,
             "current_time": current_time_str,
             "timezone": user_timezone,
             "current_day_of_week": current_day_of_week,
+            "writable_calendars": prefetched_calendars,  # For system prompt injection
         }
 
         logger.info(

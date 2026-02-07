@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Dict, Tuple
 from zoneinfo import ZoneInfo
 
 from schemas.user import AuthenticatedUser
@@ -15,6 +16,10 @@ from utils.errors import SupabaseAuthError, SupabaseStorageError
 
 security = HTTPBearer()
 logger = logging.getLogger(__name__)
+
+# In-memory cache for user timezones: {user_id: (timezone, expiry_timestamp)}
+_timezone_cache: Dict[str, Tuple[str, float]] = {}
+_TIMEZONE_CACHE_TTL_SECONDS = 300  # 5 minutes
 
 
 async def get_current_user(
@@ -70,24 +75,37 @@ async def get_current_user(
 
 def get_user_timezone(user_id: str) -> str:
     """
-    Get user's timezone from database.
-    
+    Get user's timezone from database with in-memory caching.
+
     This function fetches the timezone from the Supabase users table and validates it.
+    Results are cached for 5 minutes to avoid redundant database queries.
+
     It will error if:
     - The timezone is not found in the database
     - The timezone is empty or None
     - The timezone is "UTC" (considered unconfigured)
     - The timezone is not a valid IANA timezone identifier
-    
+
     Args:
         user_id: User ID
-        
+
     Returns:
         IANA timezone name (e.g., "America/Los_Angeles")
-        
+
     Raises:
         HTTPException: If timezone not found, invalid, or not configured
     """
+    global _timezone_cache
+
+    # Check cache first
+    now = time.time()
+    if user_id in _timezone_cache:
+        cached_timezone, expiry = _timezone_cache[user_id]
+        if now < expiry:
+            return cached_timezone
+        # Cache expired, remove entry
+        del _timezone_cache[user_id]
+
     supabase_client = get_service_client()
     try:
         user_result = (
@@ -97,16 +115,16 @@ def get_user_timezone(user_id: str) -> str:
             .single()
             .execute()
         )
-        
+
         if not user_result.data:
             logger.error(f"No user data returned user_id={user_id}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="An error occurred while retrieving your timezone settings. Please try again."
             )
-        
+
         user_timezone = user_result.data.get("timezone")
-        
+
         # Validate timezone is set and not empty
         if not user_timezone or not user_timezone.strip():
             logger.error(f"User timezone not configured user_id={user_id}")
@@ -114,7 +132,7 @@ def get_user_timezone(user_id: str) -> str:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="User timezone is not configured. Please set your timezone in your account settings."
             )
-        
+
         # Validate timezone is not default 'UTC' (considered unconfigured)
         if user_timezone.upper() == "UTC":
             logger.error(f"User timezone is UTC (unconfigured) user_id={user_id}")
@@ -122,7 +140,7 @@ def get_user_timezone(user_id: str) -> str:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="User timezone is not configured. Please set your timezone in your account settings."
             )
-        
+
         # Validate timezone is a valid IANA timezone
         try:
             ZoneInfo(user_timezone)
@@ -135,9 +153,12 @@ def get_user_timezone(user_id: str) -> str:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Invalid timezone configuration: {user_timezone}. Please set a valid timezone in your account settings."
             ) from e
-        
+
+        # Cache the result with TTL
+        _timezone_cache[user_id] = (user_timezone, now + _TIMEZONE_CACHE_TTL_SECONDS)
+
         return user_timezone
-        
+
     except HTTPException:
         # Re-raise HTTPExceptions (our validation errors)
         raise
