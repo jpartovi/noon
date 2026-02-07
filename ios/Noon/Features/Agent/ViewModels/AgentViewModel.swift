@@ -84,7 +84,7 @@ final class AgentViewModel: ObservableObject {
 
     private weak var authProvider: AuthSessionProviding?
     private let recorder: AgentAudioRecorder
-    private let speechRecognitionService: SpeechRecognitionService
+    private let speechRecognitionService: SpeechRecognitionServicing
     private let service: AgentActionServicing
     private let transcriptionService: TranscriptionServicing
     private let scheduleService: GoogleCalendarScheduleServicing
@@ -104,7 +104,7 @@ final class AgentViewModel: ObservableObject {
 
     init(
         recorder: AgentAudioRecorder? = nil,
-        speechRecognitionService: SpeechRecognitionService? = nil,
+        speechRecognitionService: SpeechRecognitionServicing? = nil,
         service: AgentActionServicing? = nil,
         transcriptionService: TranscriptionServicing? = nil,
         scheduleService: GoogleCalendarScheduleServicing? = nil,
@@ -130,7 +130,7 @@ final class AgentViewModel: ObservableObject {
         if useOnDeviceSpeechRecognition {
             self.speechRecognitionService.prewarm()
             // Subscribe to live transcript updates
-            self.liveTranscriptCancellable = self.speechRecognitionService.$partialTranscript
+            self.liveTranscriptCancellable = self.speechRecognitionService.partialTranscriptPublisher
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] transcript in
                     self?.liveTranscript = transcript

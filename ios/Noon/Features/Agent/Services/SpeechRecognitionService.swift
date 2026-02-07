@@ -10,12 +10,13 @@ import Combine
 import Speech
 
 /// Protocol for speech recognition service
-protocol SpeechRecognitionServicing {
+protocol SpeechRecognitionServicing: AnyObject {
     func startRecording() async throws
     func stopRecording() async throws -> String?
     var isRecording: Bool { get }
     func prewarm()
     func cleanup()
+    var partialTranscriptPublisher: AnyPublisher<String, Never> { get }
 }
 
 /// Service that uses Apple's SFSpeechRecognizer for on-device speech recognition.
@@ -32,6 +33,10 @@ final class SpeechRecognitionService: NSObject, ObservableObject, SpeechRecognit
 
     @Published private(set) var isRecording: Bool = false
     @Published private(set) var partialTranscript: String = ""
+
+    var partialTranscriptPublisher: AnyPublisher<String, Never> {
+        $partialTranscript.eraseToAnyPublisher()
+    }
 
     private var speechRecognizer: SFSpeechRecognizer?
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
@@ -159,6 +164,10 @@ final class SpeechRecognitionService: NSObject, ObservableObject, SpeechRecognit
 
         // Get the audio input node
         let inputNode = audioEngine.inputNode
+
+        // Remove any existing tap before installing a new one
+        inputNode.removeTap(onBus: 0)
+
         let recordingFormat = inputNode.outputFormat(forBus: 0)
 
         // Install tap on input node to capture audio

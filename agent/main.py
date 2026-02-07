@@ -359,12 +359,19 @@ def agent_node(state: State) -> Dict[str, Any]:
             node_duration = time.time() - node_start_time
             tool_names = [tc.get('name', 'unknown') for tc in tool_calls_dict]
             log_step("agent_node", node_duration, details=f"tools={tool_names}")
+
+            # Preserve calendars_cache from previous tool_results (needed for validation)
+            previous_tool_results = state.get("tool_results", {})
+            calendars_cache = previous_tool_results.get("calendars_cache")
+
+            tool_results_update = {"tool_calls": tool_calls_dict}
+            if calendars_cache is not None:
+                tool_results_update["calendars_cache"] = calendars_cache
+
             return {
                 "messages": new_messages,
                 "success": True,  # Set success to True so should_continue routes to tool_execution
-                "tool_results": {
-                    "tool_calls": tool_calls_dict,
-                },
+                "tool_results": tool_results_update,
                 "_cached_system_prompt": cached_prompt or system_instruction.content,  # Cache for subsequent iterations
             }
         else:
@@ -613,7 +620,8 @@ def validation_node(state: State) -> Dict[str, Any]:
     try:
         tool_results = state.get("tool_results", {})
         external_tool_result = tool_results.get("external_tool_result")
-        calendars_cache = tool_results.get("calendars_cache")  # Use cached calendars if available
+        # Use cached calendars if available, fallback to pre-fetched writable_calendars
+        calendars_cache = tool_results.get("calendars_cache") or state.get("writable_calendars")
         messages = state.get("messages", [])
         auth = state.get("auth")
 

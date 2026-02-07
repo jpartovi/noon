@@ -10,11 +10,27 @@
 		1596A8782F0F80A700508554 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 15E88F692EBFC787002FDB9B /* Supabase */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		15BENCH012F0F80A700508554 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 15E88F532EBFC785002FDB9B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 15E88F5A2EBFC785002FDB9B;
+			remoteInfo = Noon;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
+		15BENCH022F0F80A700508554 /* NoonTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NoonTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		15E88F5B2EBFC785002FDB9B /* Noon.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Noon.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		15BENCH032F0F80A700508554 /* NoonTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = NoonTests;
+			sourceTree = "<group>";
+		};
 		15E88F5D2EBFC785002FDB9B /* Noon */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = Noon;
@@ -23,6 +39,13 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		15BENCH042F0F80A700508554 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		15E88F582EBFC785002FDB9B /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -38,6 +61,7 @@
 			isa = PBXGroup;
 			children = (
 				15E88F5D2EBFC785002FDB9B /* Noon */,
+				15BENCH032F0F80A700508554 /* NoonTests */,
 				15E88F5C2EBFC785002FDB9B /* Products */,
 			);
 			sourceTree = "<group>";
@@ -46,6 +70,7 @@
 			isa = PBXGroup;
 			children = (
 				15E88F5B2EBFC785002FDB9B /* Noon.app */,
+				15BENCH022F0F80A700508554 /* NoonTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -53,6 +78,27 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		15BENCH052F0F80A700508554 /* NoonTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 15BENCH062F0F80A700508554 /* Build configuration list for PBXNativeTarget "NoonTests" */;
+			buildPhases = (
+				15BENCH072F0F80A700508554 /* Sources */,
+				15BENCH042F0F80A700508554 /* Frameworks */,
+				15BENCH082F0F80A700508554 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				15BENCH092F0F80A700508554 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				15BENCH032F0F80A700508554 /* NoonTests */,
+			);
+			name = NoonTests;
+			productName = NoonTests;
+			productReference = 15BENCH022F0F80A700508554 /* NoonTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		15E88F5A2EBFC785002FDB9B /* Noon */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 15E88F662EBFC787002FDB9B /* Build configuration list for PBXNativeTarget "Noon" */;
@@ -86,6 +132,10 @@
 				LastSwiftUpdateCheck = 2600;
 				LastUpgradeCheck = 2620;
 				TargetAttributes = {
+					15BENCH052F0F80A700508554 = {
+						CreatedOnToolsVersion = 26.0.1;
+						TestTargetID = 15E88F5A2EBFC785002FDB9B;
+					};
 					15E88F5A2EBFC785002FDB9B = {
 						CreatedOnToolsVersion = 26.0.1;
 					};
@@ -109,11 +159,19 @@
 			projectRoot = "";
 			targets = (
 				15E88F5A2EBFC785002FDB9B /* Noon */,
+				15BENCH052F0F80A700508554 /* NoonTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		15BENCH082F0F80A700508554 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		15E88F592EBFC785002FDB9B /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -124,6 +182,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		15BENCH072F0F80A700508554 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		15E88F572EBFC785002FDB9B /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -133,7 +198,55 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		15BENCH092F0F80A700508554 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 15E88F5A2EBFC785002FDB9B /* Noon */;
+			targetProxy = 15BENCH012F0F80A700508554 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		15BENCH0A2F0F80A700508554 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.noon-inc.NoonTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Noon.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Noon";
+			};
+			name = Debug;
+		};
+		15BENCH0B2F0F80A700508554 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.noon-inc.NoonTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Noon.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Noon";
+			};
+			name = Release;
+		};
 		15E88F642EBFC787002FDB9B /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -268,6 +381,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_GoogleOAuthCallbackURL = "noon://oauth/google";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Noon needs microphone access to capture your voice requests.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Noon uses speech recognition to transcribe your voice requests.";
 				INFOPLIST_KEY_SupabaseAnonKey = "";
 				INFOPLIST_KEY_SupabaseURL = "";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -303,6 +417,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_GoogleOAuthCallbackURL = "noon://oauth/google";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Noon needs microphone access to capture your voice requests.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Noon uses speech recognition to transcribe your voice requests.";
 				INFOPLIST_KEY_SupabaseAnonKey = "";
 				INFOPLIST_KEY_SupabaseURL = "";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -330,6 +445,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		15BENCH062F0F80A700508554 /* Build configuration list for PBXNativeTarget "NoonTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				15BENCH0A2F0F80A700508554 /* Debug */,
+				15BENCH0B2F0F80A700508554 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		15E88F562EBFC785002FDB9B /* Build configuration list for PBXProject "Noon" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

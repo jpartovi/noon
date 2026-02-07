@@ -33,7 +33,7 @@ class MockClient(CalendarClient):
         start_dt = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
         end_dt = datetime.fromisoformat(end_time.replace("Z", "+00:00"))
         
-        events = generate_mock_events(start_dt, end_dt, count=3)
+        events = generate_mock_events(start_dt, end_dt, count=10)
         
         # Return minimal details with both id and calendar_id (required)
         return [
@@ -61,7 +61,7 @@ class MockClient(CalendarClient):
         end_dt = datetime.fromisoformat(end_time.replace("Z", "+00:00"))
         
         keyword_list = keywords.split()
-        events = generate_mock_events(start_dt, end_dt, count=2, keywords=keyword_list)
+        events = generate_mock_events(start_dt, end_dt, count=10, keywords=keyword_list)
         
         # Return events with both id and calendar_id (required)
         return [
