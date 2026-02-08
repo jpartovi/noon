@@ -87,6 +87,26 @@ struct AgentView: View {
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: agentModalState != nil)
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: selectedEventForDetails != nil)
+        #if DEBUG
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button {
+                    viewModel.runBenchmarkSuite(accessToken: authViewModel.session?.accessToken)
+                } label: {
+                    if viewModel.isBenchmarkRunning {
+                        Text("\(viewModel.benchmarkProgress)/\(viewModel.benchmarkTotal)")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.gray)
+                    } else {
+                        Image(systemName: "timer")
+                            .imageScale(.medium)
+                            .foregroundStyle(.gray)
+                    }
+                }
+                .disabled(viewModel.isBenchmarkRunning)
+            }
+        }
+        #endif
         .onReceive(viewModel.$displayState) { state in
             handleDisplayStateChange(state)
             

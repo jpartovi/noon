@@ -20,8 +20,12 @@ _log_file_path = Path(__file__).parent.parent / "agent_timing.log"
 
 
 def _is_enabled() -> bool:
-    """Check if timing logging is enabled via environment variable."""
-    return os.getenv("ENABLE_TIMING_LOGGER", "").lower() in ("true", "1")
+    """Check if timing logging is enabled via environment variable.
+
+    Defaults to True for local development. Set ENABLE_TIMING_LOGGER=false to disable.
+    """
+    val = os.getenv("ENABLE_TIMING_LOGGER", "true").lower()
+    return val in ("true", "1")
 
 
 class TimingLogger:

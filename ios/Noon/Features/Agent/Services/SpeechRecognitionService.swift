@@ -53,6 +53,8 @@ final class SpeechRecognitionService: NSObject, ObservableObject, SpeechRecognit
     private var isMicPermissionGranted: Bool?
     private var isSpeechPermissionGranted: Bool?
     private var isSessionActive = false
+    private var endAudioTimestamp: Date?
+    private let timingLogger = TimingLogger.shared
 
     override init() {
         super.init()
@@ -64,6 +66,8 @@ final class SpeechRecognitionService: NSObject, ObservableObject, SpeechRecognit
     // MARK: - Prewarm
 
     func prewarm() {
+        let prewarmStart = Date()
+
         // Check speech permission status (non-blocking read)
         let speechStatus = SFSpeechRecognizer.authorizationStatus()
         isSpeechPermissionGranted = speechStatus == .authorized
@@ -88,7 +92,11 @@ final class SpeechRecognitionService: NSObject, ObservableObject, SpeechRecognit
             Task { @MainActor in
                 guard !isSessionActive,
                       isMicPermissionGranted == true,
-                      isSpeechPermissionGranted == true else { return }
+                      isSpeechPermissionGranted == true else {
+                    let prewarmDuration = Date().timeIntervalSince(prewarmStart)
+                    await timingLogger.logStep("frontend.speech_recognition.prewarm", duration: prewarmDuration, details: "session_activated=false")
+                    return
+                }
                 do {
                     #if targetEnvironment(simulator)
                     try? session.setActive(true, options: .notifyOthersOnDeactivation)
@@ -99,9 +107,14 @@ final class SpeechRecognitionService: NSObject, ObservableObject, SpeechRecognit
                 } catch {
                     // Silently fail — will retry during actual recording start
                 }
+                let prewarmDuration = Date().timeIntervalSince(prewarmStart)
+                await timingLogger.logStep("frontend.speech_recognition.prewarm", duration: prewarmDuration, details: "session_activated=\(isSessionActive)")
             }
         } catch {
-            // Silently fail — will retry during actual recording start
+            Task {
+                let prewarmDuration = Date().timeIntervalSince(prewarmStart)
+                await timingLogger.logStep("frontend.speech_recognition.prewarm", duration: prewarmDuration, details: "error=true")
+            }
         }
     }
 
@@ -109,6 +122,7 @@ final class SpeechRecognitionService: NSObject, ObservableObject, SpeechRecognit
 
     func startRecording() async throws {
         guard !isRecording else { return }
+        let startRecordingStart = Date()
 
         // Request permissions if needed
         try await requestPermissionsIfNeeded()
@@ -193,6 +207,8 @@ final class SpeechRecognitionService: NSObject, ObservableObject, SpeechRecognit
         }
 
         isRecording = true
+        let startRecordingDuration = Date().timeIntervalSince(startRecordingStart)
+        await timingLogger.logStep("frontend.speech_recognition.start_recording", duration: startRecordingDuration)
     }
 
     // MARK: - Stop Recording
@@ -200,23 +216,33 @@ final class SpeechRecognitionService: NSObject, ObservableObject, SpeechRecognit
     func stopRecording() async throws -> String? {
         guard isRecording else { return nil }
         isRecording = false
+        let stopStart = Date()
 
         // Stop audio engine and discard it — a fresh one is created on next startRecording()
+        let stopEngineStart = Date()
         audioEngine?.stop()
         audioEngine?.inputNode.removeTap(onBus: 0)
         audioEngine = nil
 
         // End the audio stream so the recognizer can deliver its final result
         recognitionRequest?.endAudio()
+        endAudioTimestamp = Date()
         recognitionRequest = nil
+        let stopEngineDuration = Date().timeIntervalSince(stopEngineStart)
+        await timingLogger.logStep("frontend.speech_recognition.stop_engine", duration: stopEngineDuration)
 
         // If we already have a final transcript, return it immediately
         if let final = finalTranscript {
             cancelRecognitionTask()
+            let stopDuration = Date().timeIntervalSince(stopStart)
+            await timingLogger.logStep("frontend.speech_recognition.wait_for_final", duration: 0, details: "timed_out=false already_final=true")
+            await timingLogger.logStep("frontend.speech_recognition.stop_recording", duration: stopDuration)
             return final
         }
 
         // Wait for the final result callback, with a timeout
+        let waitStart = Date()
+        var didTimeout = false
         let transcript: String? = await withCheckedContinuation { continuation in
             self.finalContinuation = continuation
             self.continuationResumed = false
@@ -224,12 +250,19 @@ final class SpeechRecognitionService: NSObject, ObservableObject, SpeechRecognit
             // Timeout after 1.5 seconds — use whatever partial we have
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
+                if !self.continuationResumed {
+                    didTimeout = true
+                }
                 let fallback = self.partialTranscript.isEmpty ? nil : self.partialTranscript
                 self.resumeContinuation(with: fallback)
             }
         }
+        let waitDuration = Date().timeIntervalSince(waitStart)
+        await timingLogger.logStep("frontend.speech_recognition.wait_for_final", duration: waitDuration, details: "timed_out=\(didTimeout)")
 
         cancelRecognitionTask()
+        let stopDuration = Date().timeIntervalSince(stopStart)
+        await timingLogger.logStep("frontend.speech_recognition.stop_recording", duration: stopDuration)
         return transcript
     }
 
