@@ -43,20 +43,21 @@ struct AgentActionService: AgentActionServicing {
         urlRequest.httpBody = try encoder.encode(requestBody)
 
         // Log network call start
+        let flowDetail = flowId.map { " flow_id=\($0)" } ?? ""
         let networkCallStart = Date()
-        await TimingLogger.shared.logStart("frontend.agent_action_service.network_call", details: "query_length=\(request.query.count) chars")
-        
+        await TimingLogger.shared.logStart("frontend.agent_action_service.network_call", details: "query_length=\(request.query.count) chars\(flowDetail)")
+
         let (data, response) = try await NetworkSession.shared.data(for: urlRequest)
-        
+
         guard let httpResponse = response as? HTTPURLResponse else {
             throw ServiceError.unexpectedResponse
         }
 
         let statusCode = httpResponse.statusCode
-        
+
         // Log network call completion (after we have status code)
         let networkCallDuration = Date().timeIntervalSince(networkCallStart)
-        await TimingLogger.shared.logStep("frontend.agent_action_service.network_call", duration: networkCallDuration, details: "status_code=\(statusCode)")
+        await TimingLogger.shared.logStep("frontend.agent_action_service.network_call", duration: networkCallDuration, details: "status_code=\(statusCode)\(flowDetail)")
         guard 200..<300 ~= statusCode else {
             // Extract error message from response body
             // FastAPI returns JSON with "detail" field for HTTPException

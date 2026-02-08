@@ -202,9 +202,11 @@ final class AgentViewModel: ObservableObject {
 
         isRecording = false
         let flowStart = Date()
+        let flowId = String(UUID().uuidString.prefix(8))
 
         Task { @MainActor in
             do {
+                await timingLogger.logStart("frontend.total_flow", details: "flow_id=\(flowId) mode=voice")
                 let transcribedText: String
 
                 if useOnDeviceSpeechRecognition {
@@ -217,7 +219,7 @@ final class AgentViewModel: ObservableObject {
                         return
                     }
                     let stopDuration = Date().timeIntervalSince(stopStart)
-                    await timingLogger.logStep("frontend.stop_and_transcribe_on_device", duration: stopDuration, details: "text_length=\(transcript.count) chars")
+                    await timingLogger.logStep("frontend.stop_and_transcribe_on_device", duration: stopDuration, details: "text_length=\(transcript.count) chars flow_id=\(flowId)")
 
                     transcribedText = transcript
                     transcriptionText = transcribedText
@@ -232,7 +234,7 @@ final class AgentViewModel: ObservableObject {
                         return
                     }
                     let stopDuration = Date().timeIntervalSince(stopStart)
-                    await timingLogger.logStep("frontend.stop_recording", duration: stopDuration)
+                    await timingLogger.logStep("frontend.stop_recording", duration: stopDuration, details: "flow_id=\(flowId)")
                     defer { try? FileManager.default.removeItem(at: recording.fileURL) }
 
                     let startingToken = try await resolveAccessToken(initial: accessToken)
@@ -244,7 +246,7 @@ final class AgentViewModel: ObservableObject {
                         accessToken: startingToken
                     )
                     let transcribeDuration = Date().timeIntervalSince(transcribeStart)
-                    await timingLogger.logStep("frontend.transcribe_audio", duration: transcribeDuration, details: "text_length=\(transcriptionResult.text.count) chars")
+                    await timingLogger.logStep("frontend.transcribe_audio", duration: transcribeDuration, details: "text_length=\(transcriptionResult.text.count) chars flow_id=\(flowId)")
 
                     transcribedText = transcriptionResult.text
                     transcriptionText = transcribedText
@@ -262,16 +264,17 @@ final class AgentViewModel: ObservableObject {
                 let agentStart = Date()
                 let (result, tokenUsed) = try await sendToAgent(
                     query: transcribedText,
-                    accessToken: startingToken
+                    accessToken: startingToken,
+                    flowId: flowId
                 )
                 let agentDuration = Date().timeIntervalSince(agentStart)
-                await timingLogger.logStep("frontend.send_to_agent", duration: agentDuration, details: "response_type=\(result.agentResponse.typeString)")
+                await timingLogger.logStep("frontend.send_to_agent", duration: agentDuration, details: "response_type=\(result.agentResponse.typeString) flow_id=\(flowId)")
 
                 // Handle response and display UI
                 let handleStart = Date()
                 try await handle(agentResponse: result.agentResponse, accessToken: tokenUsed)
                 let handleDuration = Date().timeIntervalSince(handleStart)
-                await timingLogger.logStep("frontend.handle_response", duration: handleDuration)
+                await timingLogger.logStep("frontend.handle_response", duration: handleDuration, details: "flow_id=\(flowId)")
 
                 // Clear transcription text when agent response arrives
                 transcriptionText = nil
@@ -280,7 +283,7 @@ final class AgentViewModel: ObservableObject {
 
                 // Log total flow duration
                 let totalDuration = Date().timeIntervalSince(flowStart)
-                await timingLogger.logStep("frontend.total_flow", duration: totalDuration)
+                await timingLogger.logStep("frontend.total_flow", duration: totalDuration, details: "flow_id=\(flowId)")
 
                 // Set notice message for no-action responses (after clearing transcription)
                 switch result.agentResponse {
@@ -909,27 +912,30 @@ final class AgentViewModel: ObservableObject {
     
     private func sendToAgent(
         query: String,
-        accessToken: String
+        accessToken: String,
+        flowId: String? = nil
     ) async throws -> (AgentActionResult, String) {
         let request = AgentActionRequest(query: query)
-        
+        let flowDetail = flowId.map { " flow_id=\($0)" } ?? ""
+
         // Log total time from frontend perspective (includes all overhead)
         let totalStart = Date()
-        await timingLogger.logStart("frontend.send_to_agent.total", details: "query_length=\(query.count) chars")
-        
+        await timingLogger.logStart("frontend.send_to_agent.total", details: "query_length=\(query.count) chars\(flowDetail)")
+
         let networkStart = Date()
         do {
             let result = try await service.performAgentAction(
                 request: request,
-                accessToken: accessToken
+                accessToken: accessToken,
+                flowId: flowId
             )
             let networkDuration = Date().timeIntervalSince(networkStart)
-            await timingLogger.logStep("frontend.send_to_agent.network", duration: networkDuration, details: "status_code=\(result.statusCode)")
-            
+            await timingLogger.logStep("frontend.send_to_agent.network", duration: networkDuration, details: "status_code=\(result.statusCode)\(flowDetail)")
+
             // Log total time (from frontend's perspective - includes network + any processing)
             let totalDuration = Date().timeIntervalSince(totalStart)
-            await timingLogger.logStep("frontend.send_to_agent.total", duration: totalDuration, details: "response_type=\(result.agentResponse.typeString)")
-            
+            await timingLogger.logStep("frontend.send_to_agent.total", duration: totalDuration, details: "response_type=\(result.agentResponse.typeString)\(flowDetail)")
+
             return (result, accessToken)
         } catch let error as ServerError where error.statusCode == 401 {
             // Token expired - refresh and retry once
@@ -939,15 +945,16 @@ final class AgentViewModel: ObservableObject {
             let retryStart = Date()
             let result = try await service.performAgentAction(
                 request: request,
-                accessToken: refreshedToken
+                accessToken: refreshedToken,
+                flowId: flowId
             )
             let retryDuration = Date().timeIntervalSince(retryStart)
-            await timingLogger.logStep("frontend.send_to_agent.network_retry", duration: retryDuration, details: "status_code=\(result.statusCode)")
-            
+            await timingLogger.logStep("frontend.send_to_agent.network_retry", duration: retryDuration, details: "status_code=\(result.statusCode)\(flowDetail)")
+
             // Log total time for retry
             let totalDuration = Date().timeIntervalSince(totalStart)
-            await timingLogger.logStep("frontend.send_to_agent.total", duration: totalDuration, details: "response_type=\(result.agentResponse.typeString) retry=true")
-            
+            await timingLogger.logStep("frontend.send_to_agent.total", duration: totalDuration, details: "response_type=\(result.agentResponse.typeString) retry=true\(flowDetail)")
+
             return (result, refreshedToken)
         }
     }
