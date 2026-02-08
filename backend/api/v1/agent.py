@@ -258,7 +258,14 @@ async def agent_action(
                 log_step("backend.api.action.parse_response", parse_duration, details=f"result=success type={response_type}{flow_detail}")
                 endpoint_duration = time.time() - endpoint_start
                 log_step("backend.api.action", endpoint_duration, details=f"result=success type={response_type}{flow_detail}")
-                return response.model_dump()
+                resp = response.model_dump()
+                resp["_timing"] = {
+                    "total_ms": int(endpoint_duration * 1000),
+                    "timezone_ms": int(timezone_duration * 1000),
+                    "langgraph_ms": int(langgraph_duration * 1000),
+                    "parse_ms": int(parse_duration * 1000),
+                }
+                return resp
             else:
                 # Fallback for unexpected responses - treat as error
                 # This is an agent mistake, not a user error

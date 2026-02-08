@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     deepgram_api_key: str | None = None
 
     # Performance debugging
-    enable_timing_logger: bool = False  # Enable detailed timing logs (default: off for production)
+    enable_timing_logger: bool = True  # Enable detailed timing logs (set to False in production via env)
 
     model_config = SettingsConfigDict(
         env_file=str(PROJECT_ROOT / ".env"),  # Load from project root .env file

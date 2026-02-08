@@ -670,7 +670,8 @@ def tool_execution_node(state: State) -> Dict[str, Any]:
         error_msg = str(e)
         logger.error(f"Error in tool_execution_node: {error_msg}", exc_info=True)
         node_duration = time.time() - node_start_time
-        log_step("tool_execution_node", node_duration, details=f"ERROR: {error_msg[:100]}")
+        flow_detail = f" flow_id={state.get('flow_id', '')}" if state.get('flow_id') else ""
+        log_step("tool_execution_node", node_duration, details=f"ERROR: {error_msg[:100]}{flow_detail}")
         return {
             "success": False,
             "message": f"Tool execution error: {error_msg}",
@@ -691,14 +692,16 @@ def validation_node(state: State) -> Dict[str, Any]:
         external_tool_result = tool_results.get("external_tool_result")
         messages = state.get("messages", [])
         auth = state.get("auth")
-        
-        log_start("validation_node")
+        flow_id = state.get("flow_id", "")
+        flow_detail = f" flow_id={flow_id}" if flow_id else ""
+
+        log_start("validation_node", details=flow_detail.strip() if flow_detail else None)
         
         # If no external tool result, nothing to validate - proceed
         if not external_tool_result:
             logger.info("No external tool result to validate - proceeding")
             node_duration = time.time() - node_start_time
-            log_step("validation_node", node_duration, details="result=no_external_tool")
+            log_step("validation_node", node_duration, details=f"result=no_external_tool{flow_detail}")
             return {
                 "terminated": True,
             }
@@ -711,7 +714,7 @@ def validation_node(state: State) -> Dict[str, Any]:
         validate_start_time = time.time()
         validation_error = validate_request(external_tool_result, auth)
         validate_duration = time.time() - validate_start_time
-        log_step("validation_node.validate_request", validate_duration)
+        log_step("validation_node.validate_request", validate_duration, details=flow_detail.strip() if flow_detail else None)
         
         if validation_error:
             # Validation failed - return error to agent loop
@@ -767,7 +770,7 @@ def validation_node(state: State) -> Dict[str, Any]:
             # Clear external_tool_result and set terminated to False to continue agent loop
             new_messages = filtered_messages + validation_tool_messages
             node_duration = time.time() - node_start_time
-            log_step("validation_node", node_duration, details="FAILED")
+            log_step("validation_node", node_duration, details=f"FAILED{flow_detail}")
             return {
                 "messages": new_messages,
                 "tool_results": {},  # Clear external_tool_result
@@ -778,7 +781,7 @@ def validation_node(state: State) -> Dict[str, Any]:
             # Keep external_tool_result and terminated=True so format_response can use it
             logger.info("Validation passed - proceeding to format_response")
             node_duration = time.time() - node_start_time
-            log_step("validation_node", node_duration, details="result=validation_passed")
+            log_step("validation_node", node_duration, details=f"result=validation_passed{flow_detail}")
             return {
                 "tool_results": {
                     "external_tool_result": external_tool_result,  # Preserve for format_response
@@ -792,7 +795,8 @@ def validation_node(state: State) -> Dict[str, Any]:
         # On validation node error, fail safe - proceed to format_response
         # (better to let the request through than block everything)
         node_duration = time.time() - node_start_time
-        log_step("validation_node", node_duration, details=f"ERROR: {error_msg[:100]}")
+        flow_detail = f" flow_id={state.get('flow_id', '')}" if state.get('flow_id') else ""
+        log_step("validation_node", node_duration, details=f"ERROR: {error_msg[:100]}{flow_detail}")
         return {
             "terminated": True,
         }
@@ -811,8 +815,10 @@ def format_response_node(state: State) -> Dict[str, Any]:
     success = state.get("success", True)
     message = state.get("message")
     query = state.get("query", "")
-    
-    log_start("format_response_node")
+    flow_id = state.get("flow_id", "")
+    flow_detail = f" flow_id={flow_id}" if flow_id else ""
+
+    log_start("format_response_node", details=flow_detail.strip() if flow_detail else None)
     logger.info(f"State keys: {list(state.keys())}")
     logger.info(f"Query from state: {query}")
     logger.info(f"External tool result: {external_tool_result}")
@@ -823,7 +829,7 @@ def format_response_node(state: State) -> Dict[str, Any]:
         logger.info(f"Returning error response: {message}")
         error_response = ErrorResponse(message=message, query=query)
         node_duration = time.time() - node_start_time
-        log_step("format_response_node", node_duration, details="result=error")
+        log_step("format_response_node", node_duration, details=f"result=error{flow_detail}")
         return error_response.model_dump()
     
     # Check if we have an external tool result
@@ -835,7 +841,7 @@ def format_response_node(state: State) -> Dict[str, Any]:
         # Add query to the external tool result dict
         external_tool_result["query"] = query
         node_duration = time.time() - node_start_time
-        log_step("format_response_node", node_duration, details=f"type: {response_type}")
+        log_step("format_response_node", node_duration, details=f"type: {response_type}{flow_detail}")
         return external_tool_result
     
     # Fallback: should not happen if agent is working correctly
@@ -846,7 +852,7 @@ def format_response_node(state: State) -> Dict[str, Any]:
         query=query
     )
     node_duration = time.time() - node_start_time
-    log_step("format_response_node", node_duration, details="result=fallback_error")
+    log_step("format_response_node", node_duration, details=f"result=fallback_error{flow_detail}")
     return error_response.model_dump()
 
 

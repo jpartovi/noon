@@ -78,6 +78,23 @@ struct AgentActionService: AgentActionServicing {
             decoder.dateDecodingStrategy = .iso8601
             let agentResponse = try decoder.decode(AgentResponse.self, from: data)
 
+            // Parse and log backend-reported timing metadata
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let timing = json["_timing"] as? [String: Int] {
+                if let totalMs = timing["total_ms"] {
+                    await TimingLogger.shared.logStep("frontend.backend_reported.total", duration: Double(totalMs) / 1000.0, details: flowDetail.isEmpty ? nil : flowDetail.trimmingCharacters(in: .whitespaces))
+                }
+                if let langgraphMs = timing["langgraph_ms"] {
+                    await TimingLogger.shared.logStep("frontend.backend_reported.langgraph", duration: Double(langgraphMs) / 1000.0, details: flowDetail.isEmpty ? nil : flowDetail.trimmingCharacters(in: .whitespaces))
+                }
+                if let timezoneMs = timing["timezone_ms"] {
+                    await TimingLogger.shared.logStep("frontend.backend_reported.timezone", duration: Double(timezoneMs) / 1000.0, details: flowDetail.isEmpty ? nil : flowDetail.trimmingCharacters(in: .whitespaces))
+                }
+                if let parseMs = timing["parse_ms"] {
+                    await TimingLogger.shared.logStep("frontend.backend_reported.parse", duration: Double(parseMs) / 1000.0, details: flowDetail.isEmpty ? nil : flowDetail.trimmingCharacters(in: .whitespaces))
+                }
+            }
+
             return AgentActionResult(statusCode: statusCode, data: data, agentResponse: agentResponse)
         } catch {
             throw ServiceError.decodingFailed(underlying: error)

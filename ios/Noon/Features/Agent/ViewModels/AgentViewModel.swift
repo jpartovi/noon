@@ -1867,5 +1867,119 @@ final class AgentViewModel: ObservableObject {
         return (start: normalizedDate, end: endDate)
     }
 
+    // MARK: - Debug Text Input Mode
+
+    #if DEBUG
+    @Published private(set) var isBenchmarkRunning: Bool = false
+    @Published private(set) var benchmarkProgress: Int = 0
+    @Published private(set) var benchmarkTotal: Int = 0
+
+    /// Send a text query directly to the agent, bypassing voice recording.
+    /// Useful for benchmarking network + backend without voice variability.
+    func sendTextQuery(_ text: String, accessToken: String?) {
+        let flowStart = Date()
+        let flowId = String(UUID().uuidString.prefix(8))
+
+        Task { @MainActor in
+            do {
+                await timingLogger.logStart("frontend.total_flow", details: "flow_id=\(flowId) mode=text")
+                await timingLogger.logStart("frontend.text_input_mode", details: "flow_id=\(flowId) query=\(text.prefix(50))")
+
+                displayState = .uploading
+                transcriptionText = text
+
+                let startingToken = try await resolveAccessToken(initial: accessToken)
+
+                // Clear any existing highlights, notices, or confirmations
+                agentAction = nil
+                focusEvent = nil
+                noticeMessage = nil
+
+                // Send to agent
+                let agentStart = Date()
+                let (result, tokenUsed) = try await sendToAgent(
+                    query: text,
+                    accessToken: startingToken,
+                    flowId: flowId
+                )
+                let agentDuration = Date().timeIntervalSince(agentStart)
+                await timingLogger.logStep("frontend.send_to_agent", duration: agentDuration, details: "response_type=\(result.agentResponse.typeString) flow_id=\(flowId)")
+
+                // Handle response and display UI
+                let handleStart = Date()
+                try await handle(agentResponse: result.agentResponse, accessToken: tokenUsed)
+                let handleDuration = Date().timeIntervalSince(handleStart)
+                await timingLogger.logStep("frontend.handle_response", duration: handleDuration, details: "flow_id=\(flowId)")
+
+                transcriptionText = nil
+                displayState = .completed(result: result)
+
+                let totalDuration = Date().timeIntervalSince(flowStart)
+                await timingLogger.logStep("frontend.total_flow", duration: totalDuration, details: "flow_id=\(flowId) mode=text")
+
+                switch result.agentResponse {
+                case .noAction(let response):
+                    setNoticeMessage(response.metadata.reason)
+                case .error(let error):
+                    print("Agent error handled: \(error.message)")
+                    handleAgentError(error as Error, context: "Agent processing")
+                default:
+                    clearNoticeMessage()
+                }
+            } catch {
+                handleAgentError(error, context: "Agent processing")
+            }
+        }
+    }
+
+    /// Run a fixed set of benchmark queries sequentially.
+    /// Sends each query through the full agent flow with 1s delay between requests.
+    func runBenchmarkSuite(accessToken: String?) {
+        let benchmarkQueries = [
+            "what's on my schedule today",
+            "show me tomorrow's events",
+            "create a meeting called standup tomorrow at 10am",
+            "show my next meeting",
+            "delete the standup meeting",
+        ]
+
+        isBenchmarkRunning = true
+        benchmarkProgress = 0
+        benchmarkTotal = benchmarkQueries.count
+
+        Task { @MainActor in
+            let suiteStart = Date()
+            let suiteFlowId = String(UUID().uuidString.prefix(8))
+            await timingLogger.logStart("frontend.benchmark_suite", details: "flow_id=\(suiteFlowId) count=\(benchmarkQueries.count)")
+
+            for (index, query) in benchmarkQueries.enumerated() {
+                benchmarkProgress = index + 1
+                print("[Benchmark \(index + 1)/\(benchmarkQueries.count)] \(query)")
+                sendTextQuery(query, accessToken: accessToken)
+
+                // Wait for the flow to complete (displayState settles)
+                // Simple polling approach — wait until not uploading
+                try? await Task.sleep(nanoseconds: 500_000_000) // initial delay
+                var waitCount = 0
+                while case .uploading = displayState, waitCount < 60 {
+                    try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s poll
+                    waitCount += 1
+                }
+
+                // Delay between requests
+                if index < benchmarkQueries.count - 1 {
+                    try? await Task.sleep(nanoseconds: 1_000_000_000) // 1s
+                }
+            }
+
+            let suiteDuration = Date().timeIntervalSince(suiteStart)
+            await timingLogger.logStep("frontend.benchmark_suite", duration: suiteDuration, details: "flow_id=\(suiteFlowId) count=\(benchmarkQueries.count)")
+
+            isBenchmarkRunning = false
+            print("[Benchmark] Suite completed in \(String(format: "%.1f", suiteDuration))s")
+        }
+    }
+    #endif
+
 }
 
