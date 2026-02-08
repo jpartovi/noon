@@ -8,7 +8,13 @@
 import Foundation
 
 protocol AgentActionServicing {
-    func performAgentAction(request: AgentActionRequest, accessToken: String) async throws -> AgentActionResult
+    func performAgentAction(request: AgentActionRequest, accessToken: String, flowId: String?) async throws -> AgentActionResult
+}
+
+extension AgentActionServicing {
+    func performAgentAction(request: AgentActionRequest, accessToken: String) async throws -> AgentActionResult {
+        try await performAgentAction(request: request, accessToken: accessToken, flowId: nil)
+    }
 }
 
 struct AgentActionService: AgentActionServicing {
@@ -18,7 +24,7 @@ struct AgentActionService: AgentActionServicing {
         case decodingFailed(underlying: Error)
     }
 
-    func performAgentAction(request: AgentActionRequest, accessToken: String) async throws -> AgentActionResult {
+    func performAgentAction(request: AgentActionRequest, accessToken: String, flowId: String? = nil) async throws -> AgentActionResult {
         let baseURL = AppConfiguration.agentBaseURL
         guard let endpoint = URL(string: "/api/v1/agent/action", relativeTo: baseURL) else {
             throw ServiceError.invalidURL
@@ -28,6 +34,9 @@ struct AgentActionService: AgentActionServicing {
         urlRequest.httpMethod = "POST"
         urlRequest.addValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let flowId = flowId {
+            urlRequest.addValue(flowId, forHTTPHeaderField: "X-Flow-Id")
+        }
 
         let requestBody = ["query": request.query]
         let encoder = JSONEncoder()
