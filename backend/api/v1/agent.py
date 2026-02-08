@@ -121,7 +121,9 @@ async def agent_action(
     """
     endpoint_start = time.time()
     query_text = body.query
-    log_start("backend.api.action", details=f"user_id={current_user.id} query_length={len(query_text)}")
+    flow_id = request.headers.get("x-flow-id", "")
+    flow_detail = f" flow_id={flow_id}" if flow_id else ""
+    log_start("backend.api.action", details=f"user_id={current_user.id} query_length={len(query_text)}{flow_detail}")
     try:
         # Extract Supabase access token from Authorization header
         auth_header = request.headers.get("Authorization")
@@ -171,7 +173,7 @@ async def agent_action(
         timezone_start = time.time()
         user_timezone = get_user_timezone(current_user.id)
         timezone_duration = time.time() - timezone_start
-        log_step("backend.api.action.get_timezone", timezone_duration)
+        log_step("backend.api.action.get_timezone", timezone_duration, details=flow_detail.strip() if flow_detail else None)
         
         # Convert to user's timezone for current time calculation
         current_utc = datetime.now(timezone.utc)
@@ -192,6 +194,7 @@ async def agent_action(
             "current_time": current_time_str,
             "timezone": user_timezone,
             "current_day_of_week": current_day_of_week,
+            "flow_id": flow_id,
         }
 
         logger.info(
@@ -206,7 +209,7 @@ async def agent_action(
             input=input_state,
         )
         langgraph_duration = time.time() - langgraph_start
-        log_step("backend.api.action.langgraph_invoke", langgraph_duration, details=f"response_type={result.get('type')}")
+        log_step("backend.api.action.langgraph_invoke", langgraph_duration, details=f"response_type={result.get('type')}{flow_detail}")
 
         logger.info(
             f"Agent completed user_id={current_user.id} "
@@ -220,9 +223,9 @@ async def agent_action(
                 # Error response
                 error_response = ErrorResponse.model_validate(result)
                 parse_duration = time.time() - parse_start
-                log_step("backend.api.action.parse_response", parse_duration, details="result=error")
+                log_step("backend.api.action.parse_response", parse_duration, details=f"result=error{flow_detail}")
                 endpoint_duration = time.time() - endpoint_start
-                log_step("backend.api.action", endpoint_duration)
+                log_step("backend.api.action", endpoint_duration, details=f"result=error{flow_detail}")
                 return error_response.model_dump()
             elif "type" in result:
                 # Success response - parse based on type
@@ -247,14 +250,14 @@ async def agent_action(
                         message=f"Unknown response type from agent: {response_type}"
                     )
                     parse_duration = time.time() - parse_start
-                    log_step("backend.api.action.parse_response", parse_duration, details=f"result=unknown_type type={response_type}")
+                    log_step("backend.api.action.parse_response", parse_duration, details=f"result=unknown_type type={response_type}{flow_detail}")
                     endpoint_duration = time.time() - endpoint_start
-                    log_step("backend.api.action", endpoint_duration)
+                    log_step("backend.api.action", endpoint_duration, details=f"result=unknown_type{flow_detail}")
                     return error_response.model_dump()
                 parse_duration = time.time() - parse_start
-                log_step("backend.api.action.parse_response", parse_duration, details=f"result=success type={response_type}")
+                log_step("backend.api.action.parse_response", parse_duration, details=f"result=success type={response_type}{flow_detail}")
                 endpoint_duration = time.time() - endpoint_start
-                log_step("backend.api.action", endpoint_duration)
+                log_step("backend.api.action", endpoint_duration, details=f"result=success type={response_type}{flow_detail}")
                 return response.model_dump()
             else:
                 # Fallback for unexpected responses - treat as error
@@ -269,9 +272,9 @@ async def agent_action(
                     message="Agent failed to handle request precisely. Please try rephrasing your request."
                 )
                 parse_duration = time.time() - parse_start
-                log_step("backend.api.action.parse_response", parse_duration, details="result=unexpected_format")
+                log_step("backend.api.action.parse_response", parse_duration, details=f"result=unexpected_format{flow_detail}")
                 endpoint_duration = time.time() - endpoint_start
-                log_step("backend.api.action", endpoint_duration)
+                log_step("backend.api.action", endpoint_duration, details=f"result=unexpected_format{flow_detail}")
                 return error_response.model_dump()
         except ValidationError as e:
             # This is an agent mistake (invalid response format), not a user error
@@ -285,12 +288,12 @@ async def agent_action(
                 message="Agent failed to handle request precisely. Please try rephrasing your request."
             )
             endpoint_duration = time.time() - endpoint_start
-            log_step("backend.api.action", endpoint_duration, details="result=validation_error")
+            log_step("backend.api.action", endpoint_duration, details=f"result=validation_error{flow_detail}")
             return error_response.model_dump()
 
     except HTTPException:
         endpoint_duration = time.time() - endpoint_start
-        log_step("backend.api.action", endpoint_duration, details="result=http_exception")
+        log_step("backend.api.action", endpoint_duration, details=f"result=http_exception{flow_detail}")
         raise
     except Exception as e:
         # Log full error details for debugging (verbose internal logging)
@@ -300,7 +303,7 @@ async def agent_action(
         )
         # Return brief, user-friendly message (not technical details)
         endpoint_duration = time.time() - endpoint_start
-        log_step("backend.api.action", endpoint_duration, details=f"error={str(e)[:80]}")
+        log_step("backend.api.action", endpoint_duration, details=f"error={str(e)[:80]}{flow_detail}")
         raise HTTPException(
             status_code=500,
             detail="An error occurred while processing your request. Please try again."
